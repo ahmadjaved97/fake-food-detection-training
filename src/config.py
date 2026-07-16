@@ -15,8 +15,8 @@ EXPECTED_CLASSES = [
     "real_good",
     "real_bad",
     "fake_good",
-    "fully_fake_bad",
-    "fake_bad_manipulated",
+    "fake_bad",
+    "manipulated_bad",
 ]
 
 
