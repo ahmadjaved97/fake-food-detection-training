@@ -1,0 +1,9 @@
+model:
+  name: mobilenetv3_small_100.lamb_in1k
+training:
+  epochs: 70
+optimizer:
+  lr: 0.0005
+  weight_decay: 0.0001
+scheduler:
+  warmup_epochs: 5

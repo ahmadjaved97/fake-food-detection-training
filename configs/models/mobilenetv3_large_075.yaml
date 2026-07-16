@@ -1,0 +1,11 @@
+model:
+  # timm exposes this architecture, but no pretrained 075 checkpoint in common builds.
+  name: mobilenetv3_large_075
+  pretrained: false
+training:
+  epochs: 70
+optimizer:
+  lr: 0.0005
+  weight_decay: 0.0001
+scheduler:
+  warmup_epochs: 5

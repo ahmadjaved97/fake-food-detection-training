@@ -1,0 +1,9 @@
+model:
+  name: convnext_small.fb_in22k_ft_in1k
+training:
+  epochs: 70
+optimizer:
+  lr: 0.0002
+  weight_decay: 0.05
+scheduler:
+  warmup_epochs: 8

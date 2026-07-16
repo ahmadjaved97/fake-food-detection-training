@@ -1,0 +1,9 @@
+model:
+  name: resnet101.tv_in1k
+training:
+  epochs: 60
+optimizer:
+  lr: 0.0003
+  weight_decay: 0.0001
+scheduler:
+  warmup_epochs: 5

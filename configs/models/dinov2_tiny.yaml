@@ -1,0 +1,11 @@
+# Official DINOv2 tiny weights are not generally available in timm. This maps to the
+# smallest common DINOv2 checkpoint; verify with scripts/list_timm_models.py.
+model:
+  name: vit_small_patch14_dinov2.lvd142m
+training:
+  epochs: 60
+optimizer:
+  lr: 0.00005
+  weight_decay: 0.05
+scheduler:
+  warmup_epochs: 8

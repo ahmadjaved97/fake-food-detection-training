@@ -1,0 +1,9 @@
+model:
+  name: deit_small_patch16_224.fb_in1k
+training:
+  epochs: 90
+optimizer:
+  lr: 0.0001
+  weight_decay: 0.05
+scheduler:
+  warmup_epochs: 10

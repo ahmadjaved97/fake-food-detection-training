@@ -1,0 +1,10 @@
+# timm does not consistently expose a DeiT-large v1 checkpoint. This uses DeiT III large.
+model:
+  name: deit3_large_patch16_224.fb_in22k_ft_in1k
+training:
+  epochs: 100
+optimizer:
+  lr: 0.00008
+  weight_decay: 0.05
+scheduler:
+  warmup_epochs: 10
