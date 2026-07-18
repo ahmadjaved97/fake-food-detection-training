@@ -16,7 +16,12 @@ for config in \
   configs/models/dinov2_tiny.yaml \
   configs/models/dinov2_small.yaml \
   configs/models/dinov2_base.yaml \
-  configs/models/dinov2_large.yaml
+  configs/models/dinov2_large.yaml \
+  configs/models/swin_tiny.yaml \
+  configs/models/swin_small.yaml \
+  configs/models/swin_base.yaml \
+  configs/models/swin_base_22k.yaml \
+  configs/models/swin_large_22k.yaml
 do
   name="$(basename "${config}" .yaml)"
   CONFIG="${config}" OUTPUT_DIR="${OUTPUT_BASE:-outputs}/${name}" "${REPO_ROOT}/scripts/train.sh" "$@"

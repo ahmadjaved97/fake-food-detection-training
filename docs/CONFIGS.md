@@ -26,6 +26,8 @@ Important fields:
 - `logging.wandb.enabled`: W&B logging.
 - `logging.wandb.mode`: set to `offline` on compute nodes without internet.
 - `logging.tensorboard.enabled`: TensorBoard logging.
+- `logging.wrong_examples.enabled`: log wrongly classified validation examples to W&B.
+- `logging.wrong_examples.max_images`: maximum wrong examples to log per epoch.
 - `checkpoint.save_epoch_checkpoints`: save every configured epoch interval.
 
 CLI overrides are available for epochs, LR, per-device batch size, gradient accumulation, mixed precision, run name, W&B, TensorBoard, and resume path.

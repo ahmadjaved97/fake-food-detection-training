@@ -30,6 +30,24 @@ DATASET_ROOT=/path/to/image_root \
 scripts/train_all_resnets.sh
 ```
 
+Run all MobileNetV3/V4 configs:
+
+```bash
+TRAIN_CSV=/path/to/metadata/train \
+VAL_CSV=/path/to/metadata/val \
+DATASET_ROOT=/path/to/image_root \
+scripts/train_all_mobilenets.sh
+```
+
+Run transformer configs, including DeiT, ViT, DINOv2, and Swin:
+
+```bash
+TRAIN_CSV=/path/to/metadata/train \
+VAL_CSV=/path/to/metadata/val \
+DATASET_ROOT=/path/to/image_root \
+scripts/train_all_transformers.sh
+```
+
 `--train-csv` and `--val-csv` may point to one CSV file or to a directory containing multiple CSVs.
 Each CSV must include `image_path` and `class_category`; extra columns are ignored.
 

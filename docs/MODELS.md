@@ -3,7 +3,7 @@
 The configs use likely current timm pretrained names. Verify names in your installed timm version:
 
 ```bash
-python scripts/list_timm_models.py "resnet*" "deit*" "vit*_patch16_224*" "*dinov2*" "mobilenetv3*" "convnext*"
+python scripts/list_timm_models.py "resnet*" "deit*" "vit*_patch16_224*" "*dinov2*" "mobilenetv3*" "mobilenetv4*" "swin*" "convnext*"
 ```
 
 Mappings:
@@ -27,6 +27,16 @@ Mappings:
 - MobileNetV3 small 100: `mobilenetv3_small_100.lamb_in1k`
 - MobileNetV3 large 075: `mobilenetv3_large_075` with `pretrained: false`
 - MobileNetV3 large 100: `mobilenetv3_large_100.ra_in1k`
+- MobileNetV4 conv small: `mobilenetv4_conv_small.e2400_r224_in1k`
+- MobileNetV4 conv medium: `mobilenetv4_conv_medium.e500_r256_in1k`
+- MobileNetV4 conv large: `mobilenetv4_conv_large.e600_r384_in1k`
+- MobileNetV4 hybrid medium: `mobilenetv4_hybrid_medium.e200_r256_in12k_ft_in1k`
+- MobileNetV4 hybrid large: `mobilenetv4_hybrid_large.e600_r384_in1k`
+- Swin tiny: `swin_tiny_patch4_window7_224.ms_in1k`
+- Swin small: `swin_small_patch4_window7_224.ms_in1k`
+- Swin base: `swin_base_patch4_window7_224.ms_in1k`
+- Swin base 22k fine-tuned: `swin_base_patch4_window7_224.ms_in22k_ft_in1k`
+- Swin large 22k fine-tuned: `swin_large_patch4_window7_224.ms_in22k_ft_in1k`
 - ConvNeXt tiny: `convnext_tiny.fb_in22k_ft_in1k`
 - ConvNeXt small: `convnext_small.fb_in22k_ft_in1k`
 - ConvNeXt base: `convnext_base.fb_in22k_ft_in1k`

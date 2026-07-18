@@ -1,0 +1,9 @@
+model:
+  name: mobilenetv4_hybrid_large.e600_r384_in1k
+training:
+  epochs: 80
+optimizer:
+  lr: 0.00025
+  weight_decay: 0.0001
+scheduler:
+  warmup_epochs: 6

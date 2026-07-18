@@ -12,6 +12,8 @@ DEFAULT_PATTERNS = [
     "vit*_patch16_224*",
     "*dinov2*",
     "mobilenetv3*",
+    "mobilenetv4*",
+    "swin*",
     "convnext*",
 ]
 

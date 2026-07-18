@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import numpy as np
 import torch
 from accelerate import Accelerator
+from accelerate.utils import gather_object
 from timm.data import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from torch import nn
@@ -64,6 +65,12 @@ class FocalLoss(nn.Module):
 def unpack_batch(batch: Any) -> tuple[torch.Tensor, torch.Tensor]:
     images, labels = batch[0], batch[1]
     return images, labels
+
+
+def batch_paths(batch: Any) -> list[str] | None:
+    if len(batch) < 3:
+        return None
+    return [str(path) for path in batch[2]]
 
 
 def build_criteria(
@@ -119,17 +126,37 @@ def evaluate(
     accelerator: Accelerator,
     class_names: list[str],
     enable_auc: bool,
+    max_wrong_examples: int = 0,
 ) -> dict[str, Any]:
     model.eval()
     loss_values: list[torch.Tensor] = []
     all_probs: list[torch.Tensor] = []
     all_labels: list[torch.Tensor] = []
+    local_wrong_examples: list[dict[str, Any]] = []
 
     for batch in dataloader:
         images, labels = unpack_batch(batch)
+        paths = batch_paths(batch)
         logits = model(images)
         loss = criterion(logits, labels)
         probs = torch.softmax(logits.float(), dim=1)
+        preds = probs.argmax(dim=1)
+
+        if paths is not None and max_wrong_examples > 0 and len(local_wrong_examples) < max_wrong_examples:
+            wrong_indices = (preds != labels).nonzero(as_tuple=False).flatten().tolist()
+            for idx in wrong_indices:
+                pred_idx = int(preds[idx].item())
+                true_idx = int(labels[idx].item())
+                local_wrong_examples.append(
+                    {
+                        "image_path": paths[idx],
+                        "true_label": class_names[true_idx],
+                        "predicted_label": class_names[pred_idx],
+                        "confidence": float(probs[idx, pred_idx].item()),
+                    }
+                )
+                if len(local_wrong_examples) >= max_wrong_examples:
+                    break
 
         gathered_probs, gathered_labels = accelerator.gather_for_metrics((probs, labels))
         gathered_loss = accelerator.gather_for_metrics(loss.detach().float().repeat(labels.shape[0]))
@@ -146,6 +173,15 @@ def evaluate(
         enable_auc=enable_auc,
     )
     metrics["loss"] = float(torch.cat(loss_values).mean().item())
+    if max_wrong_examples > 0:
+        gathered_wrong_examples = gather_object(local_wrong_examples)
+        wrong_examples: list[dict[str, Any]] = []
+        for item in gathered_wrong_examples:
+            if isinstance(item, list):
+                wrong_examples.extend(item)
+            else:
+                wrong_examples.append(item)
+        metrics["wrong_examples"] = wrong_examples[:max_wrong_examples]
     return metrics
 
 
@@ -167,6 +203,12 @@ def main() -> None:
 
     label_column = config["data"].get("label_column")
     missing_files_policy = config["data"].get("missing_files_policy", "skip")
+    wrong_examples_cfg = config["logging"].get("wrong_examples", {})
+    max_wrong_examples = (
+        int(wrong_examples_cfg.get("max_images", 16))
+        if bool(wrong_examples_cfg.get("enabled", True))
+        else 0
+    )
     train_rows = read_classification_csv(args.train_csv, label_column=label_column)
     class_to_idx = infer_class_to_idx(train_rows, config["data"].get("allowed_classes"))
     num_classes = len(class_to_idx)
@@ -208,7 +250,7 @@ def main() -> None:
         class_to_idx,
         transform=val_transform,
         validate_files=bool(config["data"].get("validate_files", True)),
-        return_paths=bool(config["data"].get("return_paths", False)),
+        return_paths=bool(config["data"].get("return_paths", False)) or max_wrong_examples > 0,
         split_name="validation",
         label_column=label_column,
         missing_files_policy=missing_files_policy,
@@ -331,6 +373,8 @@ def main() -> None:
         model.train()
         epoch_start = time.time()
         train_loss_values: list[torch.Tensor] = []
+        train_correct = 0
+        train_total = 0
 
         for batch in train_loader:
             images, labels = unpack_batch(batch)
@@ -342,6 +386,11 @@ def main() -> None:
                 else:
                     logits = model(images)
                     loss = train_criterion(logits, labels)
+
+                train_preds = logits.detach().argmax(dim=1)
+                gathered_train_correct = accelerator.gather_for_metrics((train_preds == labels).long())
+                train_correct += int(gathered_train_correct.sum().item())
+                train_total += int(gathered_train_correct.numel())
 
                 accelerator.backward(loss)
                 if accelerator.sync_gradients and max_grad_norm > 0:
@@ -364,10 +413,12 @@ def main() -> None:
             accelerator,
             class_names,
             enable_auc=bool(config["metrics"].get("enable_auc", False)),
+            max_wrong_examples=max_wrong_examples,
         )
 
         train_metrics = {
             "loss": train_loss,
+            "accuracy": float(train_correct / max(1, train_total)),
             "lr": float(scheduler.get_last_lr()[0]),
             "epoch_time_seconds": epoch_time,
             "throughput_images_per_second": float(len(train_dataset) / max(epoch_time, 1e-9)),
@@ -376,12 +427,15 @@ def main() -> None:
         if accelerator.is_main_process:
             run_loggers.log(train_metrics, step=epoch + 1, prefix="train")
             run_loggers.log(val_metrics, step=epoch + 1, prefix="validation")
+            run_loggers.log_epoch_comparisons(train_metrics, val_metrics, step=epoch + 1)
             if "confusion_matrix" in val_metrics:
                 run_loggers.log_confusion_matrix(val_metrics["confusion_matrix"], class_names, step=epoch + 1)
+            run_loggers.log_wrong_examples(val_metrics.get("wrong_examples", []), step=epoch + 1)
             LOGGER.info(
-                "epoch=%03d train_loss=%.4f val_loss=%.4f val_acc=%.4f val_macro_f1=%.4f lr=%.6g",
+                "epoch=%03d train_loss=%.4f train_acc=%.4f val_loss=%.4f val_acc=%.4f val_macro_f1=%.4f lr=%.6g",
                 epoch + 1,
                 train_metrics["loss"],
+                train_metrics["accuracy"],
                 val_metrics["loss"],
                 val_metrics["accuracy"],
                 val_metrics["macro_f1"],

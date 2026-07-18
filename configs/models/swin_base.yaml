@@ -1,0 +1,9 @@
+model:
+  name: swin_base_patch4_window7_224.ms_in1k
+training:
+  epochs: 100
+optimizer:
+  lr: 0.00008
+  weight_decay: 0.05
+scheduler:
+  warmup_epochs: 10

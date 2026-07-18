@@ -182,10 +182,25 @@ Because `real_bad` is the smallest class, watch macro F1 and per-class recall, n
 Configs live in `configs/models/`. Check available pretrained timm names with:
 
 ```bash
-python scripts/list_timm_models.py "*dinov2*" "deit*"
+python scripts/list_timm_models.py "*dinov2*" "deit*" "mobilenetv4*" "swin*"
 ```
 
 See [docs/MODELS.md](docs/MODELS.md) for mappings and caveats.
+
+New configs include MobileNetV4 and Swin Transformer variants:
+
+```text
+configs/models/mobilenetv4_conv_small.yaml
+configs/models/mobilenetv4_conv_medium.yaml
+configs/models/mobilenetv4_conv_large.yaml
+configs/models/mobilenetv4_hybrid_medium.yaml
+configs/models/mobilenetv4_hybrid_large.yaml
+configs/models/swin_tiny.yaml
+configs/models/swin_small.yaml
+configs/models/swin_base.yaml
+configs/models/swin_base_22k.yaml
+configs/models/swin_large_22k.yaml
+```
 
 ## Troubleshooting
 
