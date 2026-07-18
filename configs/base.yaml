@@ -8,6 +8,8 @@ data:
   return_paths: false
   # null means auto-detect class_category first, then category.
   label_column: null
+  # "skip" logs missing images and continues. Use "error" to fail fast.
+  missing_files_policy: skip
   allowed_classes:
     - real_good
     - real_bad
@@ -67,11 +69,11 @@ metrics:
 logging:
   log_every_steps: 50
   wandb:
-    enabled: false
+    enabled: true
     project: fake-food-detection
     entity: null
     # Set to "offline" on compute nodes without internet, then sync from a login node.
-    mode: null
+    mode: online
     tags: []
   tensorboard:
     enabled: false
