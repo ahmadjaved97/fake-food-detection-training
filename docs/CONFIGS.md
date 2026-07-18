@@ -5,6 +5,7 @@
 Important fields:
 
 - `data.label_column`: label column to read. `null` auto-detects `class_category`, then `category`.
+- `data.missing_files_policy`: `skip` logs missing images and continues; `error` fails fast.
 - `model.name`: timm model name.
 - `model.pretrained`: use pretrained weights.
 - `training.epochs`: full fine-tuning epochs.

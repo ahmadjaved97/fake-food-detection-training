@@ -166,6 +166,7 @@ def main() -> None:
     run_name = config.get("run_name") or f"{config['model']['name']}_{timestamp()}"
 
     label_column = config["data"].get("label_column")
+    missing_files_policy = config["data"].get("missing_files_policy", "skip")
     train_rows = read_classification_csv(args.train_csv, label_column=label_column)
     class_to_idx = infer_class_to_idx(train_rows, config["data"].get("allowed_classes"))
     num_classes = len(class_to_idx)
@@ -196,6 +197,10 @@ def main() -> None:
         return_paths=bool(config["data"].get("return_paths", False)),
         split_name="train",
         label_column=label_column,
+        missing_files_policy=missing_files_policy,
+        missing_files_log_path=output_dir / "missing_files_train.csv"
+        if accelerator.is_main_process
+        else None,
     )
     val_dataset = ImageCsvDataset(
         args.val_csv,
@@ -206,11 +211,30 @@ def main() -> None:
         return_paths=bool(config["data"].get("return_paths", False)),
         split_name="validation",
         label_column=label_column,
+        missing_files_policy=missing_files_policy,
+        missing_files_log_path=output_dir / "missing_files_validation.csv"
+        if accelerator.is_main_process
+        else None,
     )
 
     counts = class_counts(train_dataset.targets, num_classes)
     if accelerator.is_main_process:
         write_json({class_names[i]: int(counts[i]) for i in range(num_classes)}, output_dir / "class_counts.json")
+        if train_dataset.missing_rows:
+            LOGGER.warning(
+                "Skipped %d missing train images. See %s",
+                len(train_dataset.missing_rows),
+                output_dir / "missing_files_train.csv",
+            )
+        if val_dataset.missing_rows:
+            LOGGER.warning(
+                "Skipped %d missing validation images. See %s",
+                len(val_dataset.missing_rows),
+                output_dir / "missing_files_validation.csv",
+            )
+        zero_count_classes = [class_names[i] for i, count in enumerate(counts.tolist()) if count == 0]
+        if zero_count_classes:
+            LOGGER.warning("Classes with zero usable training images after filtering: %s", zero_count_classes)
 
     sampler = None
     if config["imbalance"]["weighted_sampler"]["enabled"]:

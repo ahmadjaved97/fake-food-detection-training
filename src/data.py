@@ -15,6 +15,7 @@ except ModuleNotFoundError:  # Allows CSV validation without a PyTorch install.
 IMAGE_COLUMN = "image_path"
 NORMALIZED_LABEL_COLUMN = "category"
 DEFAULT_LABEL_COLUMNS = ("class_category", "category")
+MISSING_FILE_POLICIES = ("error", "skip")
 
 
 def resolve_csv_files(csv_source: str | Path) -> list[Path]:
@@ -107,30 +108,76 @@ def infer_class_to_idx(
     return {category: idx for idx, category in enumerate(classes)}
 
 
+def split_missing_rows(
+    rows: list[dict[str, str]],
+    dataset_root: str | Path,
+    class_to_idx: dict[str, int],
+    validate_files: bool = True,
+    split_name: str = "dataset",
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    dataset_root = Path(dataset_root)
+    unknown = sorted({row[NORMALIZED_LABEL_COLUMN] for row in rows} - set(class_to_idx))
+    if unknown:
+        raise ValueError(f"{split_name} CSV contains classes not found in training CSV: {unknown}")
+
+    valid_rows = []
+    missing_rows = []
+    if validate_files:
+        for row in rows:
+            image_path = dataset_root / row[IMAGE_COLUMN]
+            if not image_path.is_file():
+                missing_row = dict(row)
+                missing_row["resolved_path"] = str(image_path)
+                missing_rows.append(missing_row)
+            else:
+                valid_rows.append(row)
+    else:
+        valid_rows = list(rows)
+    return valid_rows, missing_rows
+
+
+def write_missing_files_log(missing_rows: list[dict[str, str]], output_path: str | Path) -> None:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["source_csv", IMAGE_COLUMN, "resolved_path", NORMALIZED_LABEL_COLUMN]
+    with output_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in missing_rows:
+            writer.writerow({field: row.get(field, "") for field in fieldnames})
+
+
 def validate_rows(
     rows: list[dict[str, str]],
     dataset_root: str | Path,
     class_to_idx: dict[str, int],
     validate_files: bool = True,
     split_name: str = "dataset",
-) -> None:
-    dataset_root = Path(dataset_root)
-    unknown = sorted({row[NORMALIZED_LABEL_COLUMN] for row in rows} - set(class_to_idx))
-    if unknown:
-        raise ValueError(f"{split_name} CSV contains classes not found in training CSV: {unknown}")
-
-    if validate_files:
-        missing = []
-        for row in rows:
-            image_path = dataset_root / row[IMAGE_COLUMN]
-            if not image_path.is_file():
-                missing.append(str(image_path))
-                if len(missing) >= 10:
-                    break
-        if missing:
-            raise FileNotFoundError(
-                f"{split_name} CSV references missing image files. First missing paths: {missing}"
-            )
+    missing_files_policy: str = "error",
+) -> list[dict[str, str]]:
+    if missing_files_policy not in MISSING_FILE_POLICIES:
+        raise ValueError(
+            f"missing_files_policy must be one of {MISSING_FILE_POLICIES}, got: {missing_files_policy}"
+        )
+    valid_rows, missing_rows = split_missing_rows(
+        rows,
+        dataset_root,
+        class_to_idx,
+        validate_files=validate_files,
+        split_name=split_name,
+    )
+    if missing_rows and missing_files_policy == "error":
+        first_missing = [row["resolved_path"] for row in missing_rows[:10]]
+        raise FileNotFoundError(
+            f"{split_name} CSV references {len(missing_rows)} missing image files. "
+            f"First missing paths: {first_missing}"
+        )
+    if not valid_rows:
+        raise ValueError(
+            f"{split_name} dataset has no usable rows after checking image files. "
+            f"Missing rows: {len(missing_rows)}"
+        )
+    return valid_rows
 
 
 class ImageCsvDataset(Dataset):
@@ -144,11 +191,34 @@ class ImageCsvDataset(Dataset):
         return_paths: bool = False,
         split_name: str = "dataset",
         label_column: str | None = None,
+        missing_files_policy: str = "error",
+        missing_files_log_path: str | Path | None = None,
     ) -> None:
         self.csv_path = Path(csv_path)
         self.dataset_root = Path(dataset_root)
-        self.rows = read_classification_csv(self.csv_path, label_column=label_column)
-        validate_rows(self.rows, self.dataset_root, class_to_idx, validate_files, split_name)
+        rows = read_classification_csv(self.csv_path, label_column=label_column)
+        valid_rows, missing_rows = split_missing_rows(
+            rows,
+            self.dataset_root,
+            class_to_idx,
+            validate_files=validate_files,
+            split_name=split_name,
+        )
+        if missing_rows and missing_files_policy == "error":
+            first_missing = [row["resolved_path"] for row in missing_rows[:10]]
+            raise FileNotFoundError(
+                f"{split_name} CSV references {len(missing_rows)} missing image files. "
+                f"First missing paths: {first_missing}"
+            )
+        if not valid_rows:
+            raise ValueError(
+                f"{split_name} dataset has no usable rows after skipping missing files. "
+                f"Missing rows: {len(missing_rows)}"
+            )
+        if missing_rows and missing_files_log_path is not None:
+            write_missing_files_log(missing_rows, missing_files_log_path)
+        self.rows = valid_rows
+        self.missing_rows = missing_rows
         self.class_to_idx = class_to_idx
         self.transform = transform
         self.return_paths = return_paths

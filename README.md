@@ -61,6 +61,20 @@ python3 scripts/validate_csv.py \
   --dataset-root /path/to/image_root
 ```
 
+Training skips missing image files by default and logs them to:
+
+```text
+outputs/<run>/missing_files_train.csv
+outputs/<run>/missing_files_validation.csv
+```
+
+To fail fast instead, set:
+
+```yaml
+data:
+  missing_files_policy: error
+```
+
 ## Train One Model
 
 ```bash
