@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 for config in \
   configs/models/deit_tiny.yaml \
   configs/models/deit_small.yaml \
@@ -16,5 +19,5 @@ for config in \
   configs/models/dinov2_large.yaml
 do
   name="$(basename "${config}" .yaml)"
-  CONFIG="${config}" OUTPUT_DIR="${OUTPUT_BASE:-outputs}/${name}" scripts/train.sh "$@"
+  CONFIG="${config}" OUTPUT_DIR="${OUTPUT_BASE:-outputs}/${name}" "${REPO_ROOT}/scripts/train.sh" "$@"
 done
