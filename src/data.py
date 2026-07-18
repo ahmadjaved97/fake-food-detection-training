@@ -228,12 +228,16 @@ class ImageCsvDataset(Dataset):
         return len(self.rows)
 
     def __getitem__(self, index: int) -> tuple[Any, int] | tuple[Any, int, str]:
-        from PIL import Image
+        from PIL import Image, ImageOps
 
         row = self.rows[index]
         path = self.dataset_root / row[IMAGE_COLUMN]
         with Image.open(path) as img:
-            image = img.convert("RGB")
+            img = ImageOps.exif_transpose(img)
+            if img.mode == "P" and "transparency" in img.info:
+                image = img.convert("RGBA").convert("RGB")
+            else:
+                image = img.convert("RGB")
         if self.transform is not None:
             image = self.transform(image)
         label = self.class_to_idx[row[NORMALIZED_LABEL_COLUMN]]

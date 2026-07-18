@@ -4,9 +4,26 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from src.metrics import scalar_metrics
-
 LOGGER = logging.getLogger(__name__)
+
+
+def scalar_metrics(metrics: dict[str, Any]) -> dict[str, float]:
+    return {k: v for k, v in metrics.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+
+
+def _confusion_matrix_figure(matrix: list[list[int]], class_names: list[str]) -> Any:
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+    im = ax.imshow(np.array(matrix), cmap="Blues")
+    ax.figure.colorbar(im, ax=ax)
+    ax.set_xticks(range(len(class_names)), labels=class_names, rotation=45, ha="right")
+    ax.set_yticks(range(len(class_names)), labels=class_names)
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("True")
+    fig.tight_layout()
+    return fig
 
 
 class RunLoggers:
@@ -62,16 +79,8 @@ class RunLoggers:
         if self.tb_writer is not None:
             try:
                 import matplotlib.pyplot as plt
-                import numpy as np
 
-                fig, ax = plt.subplots(figsize=(7, 7))
-                im = ax.imshow(np.array(matrix), cmap="Blues")
-                ax.figure.colorbar(im, ax=ax)
-                ax.set_xticks(range(len(class_names)), labels=class_names, rotation=45, ha="right")
-                ax.set_yticks(range(len(class_names)), labels=class_names)
-                ax.set_xlabel("Predicted")
-                ax.set_ylabel("True")
-                fig.tight_layout()
+                fig = _confusion_matrix_figure(matrix, class_names)
                 self.tb_writer.add_figure("validation/confusion_matrix", fig, global_step=step)
                 plt.close(fig)
             except ImportError:
@@ -79,9 +88,26 @@ class RunLoggers:
 
         if self.wandb_run is not None:
             try:
+                import matplotlib.pyplot as plt
                 import wandb
 
-                self.wandb_run.log({"validation/confusion_matrix": wandb.Table(data=matrix)}, step=step)
+                fig = _confusion_matrix_figure(matrix, class_names)
+                table_rows = [
+                    [true_class, predicted_class, int(matrix[true_idx][pred_idx])]
+                    for true_idx, true_class in enumerate(class_names)
+                    for pred_idx, predicted_class in enumerate(class_names)
+                ]
+                self.wandb_run.log(
+                    {
+                        "validation/confusion_matrix": wandb.Image(fig),
+                        "validation/confusion_matrix_counts": wandb.Table(
+                            columns=["true_class", "predicted_class", "count"],
+                            data=table_rows,
+                        ),
+                    },
+                    step=step,
+                )
+                plt.close(fig)
             except Exception as exc:  # pragma: no cover - logging must not kill training
                 LOGGER.warning("Failed to log confusion matrix to W&B: %s", exc)
 
