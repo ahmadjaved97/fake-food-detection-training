@@ -3,7 +3,8 @@
 
 mkdir -p logs
 
-LOG_FILE="logs/resnet50_$(date +%Y%m%d_%H%M%S).log"
+
+LOG_FILE="logs/mobilenetv3_large_100_$(date +%Y%m%d_%H%M%S).log"
 
 # Send stdout and stderr to both terminal and log file
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -23,10 +24,10 @@ echo "Starting training at: $(date)"
 accelerate launch \
     --config_file ../accelerate_config.yaml \
     ../src/train.py \
-    --config ../configs/models/resnet50.yaml \
+    --config ../configs/models/mobilenetv3_large_100.yaml \
     --train-csv /lustre/mlnvme/data/s63ajave_hpc-datasets/fake_food_detection/model_csvs/train/ \
     --val-csv /lustre/mlnvme/data/s63ajave_hpc-datasets/fake_food_detection/model_csvs/val \
     --dataset-root /lustre/mlnvme/data/s63ajave_hpc-datasets/fake_food_detection/ \
-    --output-dir outputs/resnet50_run
+    --output-dir outputs/mobilenetv3_large_100_run
 
 echo "Training finished at: $(date)"
