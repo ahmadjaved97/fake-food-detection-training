@@ -568,7 +568,12 @@ def main() -> None:
     if accelerator.is_main_process:
         run_loggers.close()
     accelerator.wait_for_everyone()
+    accelerator.end_training()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
