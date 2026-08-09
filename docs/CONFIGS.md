@@ -10,6 +10,7 @@ Important fields:
 - `data.label_filters`: optional include/exclude filters for values in the selected target label column, separately for `train` and `validation`.
 - `data.row_filters`: optional include/exclude filters on any CSV metadata column, separately for `train` and `validation`.
 - `model.name`: timm model name.
+- `model.family`: optional model family marker. `metaclip2_coop` configs use Hugging Face MetaCLIP 2 instead of `timm`.
 - `model.pretrained`: use pretrained weights.
 - `model.num_classes`: optional class-count assertion. `null` infers from training labels.
 - `model.freeze_backbone`: for DINOv2 configs, freeze the pretrained backbone and train only the classifier head.
@@ -86,3 +87,16 @@ data:
 ```
 
 Example configs are available in `configs/examples/`.
+
+## MetaCLIP 2 CoOp Configs
+
+MetaCLIP 2 CoOp configs live in `configs/metaclip2_coop/` and should be launched with `src/train_metaclip_coop.py`.
+
+Important fields:
+
+- `model.name`: Hugging Face model id, for example `facebook/metaclip-2-worldwide-s16`.
+- `coop.n_ctx`: number of shared learnable context tokens. The default CoOp configs use `16`.
+- `coop.class_specific_context`: currently `false`; one shared context is used for all classes.
+- `coop.context_std`: random initialization standard deviation for the context vectors.
+
+The configs intentionally use `data.label_filters` rather than `data.allowed_classes`, so class indices are still inferred with the existing sorted-label behavior after filtering to the five supported `class_category` values.

@@ -225,6 +225,8 @@ Each run writes:
 
 Checkpoints contain model, optimizer, scheduler, epoch, global step, best metric, config, and class mapping.
 
+MetaCLIP 2 CoOp checkpoints are prompt checkpoints: they save the learned context vectors plus optimizer/scheduler/config/class mapping, and reload the frozen Hugging Face MetaCLIP 2 base model by name.
+
 ## Evaluation
 
 Evaluate a checkpoint on a labeled CSV:
@@ -294,6 +296,40 @@ configs/models/swin_base.yaml
 configs/models/swin_base_22k.yaml
 configs/models/swin_large_22k.yaml
 ```
+
+## MetaCLIP 2 CoOp
+
+MetaCLIP 2 CoOp prompt tuning uses a separate training entrypoint and configs so it does not mix with the normal `timm` classifier path.
+
+Available configs:
+
+```text
+configs/metaclip2_coop/s16.yaml
+configs/metaclip2_coop/m16.yaml
+configs/metaclip2_coop/b16.yaml
+```
+
+Run one MetaCLIP 2 CoOp model:
+
+```bash
+accelerate launch --config_file accelerate_config.yaml src/train_metaclip_coop.py \
+  --config configs/metaclip2_coop/s16.yaml \
+  --train-csv /path/to/metadata/train.csv \
+  --val-csv /path/to/metadata/val.csv \
+  --dataset-root /path/to/image_root \
+  --output-dir outputs/metaclip2_coop_s16
+```
+
+Or run all three:
+
+```bash
+TRAIN_CSV=/path/to/metadata/train.csv \
+VAL_CSV=/path/to/metadata/val.csv \
+DATASET_ROOT=/path/to/image_root \
+scripts/train_all_metaclip2_coop.sh
+```
+
+The CLIP path only supports `class_category` labels matching `LABEL_TO_TEXT`: `real_good`, `real_bad`, `fake_good`, `fake_bad`, and `manipulated_bad`. It keeps `class_to_idx` based on raw CSV labels for metrics, but builds prompts from natural-language phrases.
 
 ## Troubleshooting
 

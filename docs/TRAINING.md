@@ -106,6 +106,30 @@ python3 scripts/evaluate.py \
   --label-column class_category
 ```
 
+## MetaCLIP 2 CoOp Training
+
+MetaCLIP 2 CoOp prompt tuning uses a separate script and configs:
+
+```bash
+accelerate launch --config_file accelerate_config.yaml src/train_metaclip_coop.py \
+  --config configs/metaclip2_coop/s16.yaml \
+  --train-csv /path/to/metadata/train.csv \
+  --val-csv /path/to/metadata/val.csv \
+  --dataset-root /path/to/image_root \
+  --output-dir outputs/metaclip2_coop_s16
+```
+
+Run all configured MetaCLIP 2 CoOp variants:
+
+```bash
+TRAIN_CSV=/path/to/metadata/train.csv \
+VAL_CSV=/path/to/metadata/val.csv \
+DATASET_ROOT=/path/to/image_root \
+scripts/train_all_metaclip2_coop.sh
+```
+
+The first CoOp implementation freezes the MetaCLIP 2 image and text encoders and trains only 16 shared learnable context tokens. Prompts use `LABEL_TO_TEXT` natural-language phrases, while metrics still use raw CSV labels.
+
 ## Offline W&B on a Cluster
 
 For compute nodes without internet, set W&B to offline mode in the YAML:

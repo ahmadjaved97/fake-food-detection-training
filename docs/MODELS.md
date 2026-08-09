@@ -44,3 +44,17 @@ DINOv2 configs set `model.freeze_backbone: true` by default, so only the classif
 - ConvNeXt base: `convnext_base.fb_in22k_ft_in1k`
 
 If a name is unavailable, update `model.name` in the YAML to a valid value returned by `timm.list_models(pattern, pretrained=True)`.
+
+## MetaCLIP 2 CoOp
+
+MetaCLIP 2 CoOp models use Hugging Face Transformers instead of `timm` and are trained with `src/train_metaclip_coop.py`.
+
+Configs:
+
+- MetaCLIP 2 S/16: `configs/metaclip2_coop/s16.yaml`, `facebook/metaclip-2-worldwide-s16`
+- MetaCLIP 2 M/16: `configs/metaclip2_coop/m16.yaml`, `facebook/metaclip-2-worldwide-m16`
+- MetaCLIP 2 B/16: `configs/metaclip2_coop/b16.yaml`, `facebook/metaclip-2-worldwide-b16`
+
+The frozen MetaCLIP 2 image and text encoders are loaded from Hugging Face. Only the shared CoOp context prompt vectors are trainable in the first implementation.
+
+The CoOp prompt text is built from raw `class_category` labels through `LABEL_TO_TEXT`, while `class_to_idx` and metrics continue to use the raw CSV category values.
