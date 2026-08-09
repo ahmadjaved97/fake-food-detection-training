@@ -49,9 +49,62 @@ scripts/train_all_transformers.sh
 ```
 
 `--train-csv` and `--val-csv` may point to one CSV file or to a directory containing multiple CSVs.
-Each CSV must include `image_path` and `class_category`; extra columns are ignored.
+Each CSV must include `image_path` and a label column. Extra columns can be used for split filtering.
 
-Strong augmentations are disabled by default. Start with the baseline, then try RandomErasing, RandAugment, Mixup, or CutMix only after you have a clean reference run.
+Heavy augmentations are disabled by default. Start with the baseline, then try RandomErasing, RandAugment, Mixup, or CutMix only after you have a clean reference run.
+
+Simple augmentations can be controlled in YAML:
+
+```yaml
+augmentations:
+  horizontal_flip_prob: 0.5
+  vertical_flip_prob: 0.0
+  rotation_degrees: 10
+  color_jitter:
+    enabled: false
+```
+
+To train on a different label column, such as the generative model name:
+
+```bash
+scripts/train.sh --label-column generator_model
+```
+
+The model infers classes from the selected and filtered training rows unless `data.allowed_classes` sets an explicit target label subset/order.
+
+To train only selected target labels:
+
+```yaml
+data:
+  label_column: class_category
+  allowed_classes: [real_good, fake_good, fake_bad]
+```
+
+To hold out one generator output as a validation domain while still predicting `class_category`:
+
+```yaml
+data:
+  label_column: class_category
+  row_filters:
+    train:
+      exclude:
+        generator_model: [FLUX1-dev]
+    validation:
+      include:
+        generator_model: [FLUX1-dev]
+```
+
+If the held-out value is itself the target label, the validation label must still exist in training. Otherwise the classifier has no output for that class.
+
+Evaluate a saved checkpoint:
+
+```bash
+python3 scripts/evaluate.py \
+  --model-path outputs/resnet50/best_macro_f1.pt \
+  --csv /path/to/metadata/val \
+  --dataset-root /path/to/image_root \
+  --label-column class_category
+```
 
 ## Offline W&B on a Cluster
 

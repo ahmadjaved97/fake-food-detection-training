@@ -24,6 +24,7 @@ from src.checkpointing import load_checkpoint, save_checkpoint
 from src.config import apply_cli_overrides, build_arg_parser, load_config
 from src.data import (
     ImageCsvDataset,
+    apply_configured_row_filters,
     class_counts,
     infer_class_to_idx,
     make_class_weights,
@@ -34,6 +35,7 @@ from src.logging_utils import RunLoggers
 from src.metrics import compute_classification_metrics
 from src.models import create_model, create_transforms
 from src.optim import create_optimizer
+from src.rich_utils import print_panel, print_table
 from src.scheduler import create_cosine_scheduler
 from src.utils import (
     append_jsonl,
@@ -56,8 +58,12 @@ class FocalLoss(nn.Module):
         self.register_buffer("weight", weight if weight is not None else None)
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        ce = nn.functional.cross_entropy(logits, targets, weight=self.weight, reduction="none")
-        pt = torch.exp(-ce)
+        log_probs = nn.functional.log_softmax(logits, dim=1)
+        log_pt = log_probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+        pt = log_pt.exp()
+        ce = -log_pt
+        if self.weight is not None:
+            ce = ce * self.weight.to(logits.device).gather(0, targets)
         loss = (1.0 - pt).pow(self.gamma) * ce
         return loss.mean()
 
@@ -210,17 +216,27 @@ def main() -> None:
         else 0
     )
     train_rows = read_classification_csv(args.train_csv, label_column=label_column)
+    val_rows = read_classification_csv(args.val_csv, label_column=label_column)
+    train_rows, train_filter_report = apply_configured_row_filters(train_rows, config["data"], "train")
+    val_rows, val_filter_report = apply_configured_row_filters(val_rows, config["data"], "validation")
     class_to_idx = infer_class_to_idx(train_rows, config["data"].get("allowed_classes"))
     num_classes = len(class_to_idx)
-    expected_num_classes = int(config["model"].get("num_classes", num_classes))
-    if num_classes != expected_num_classes:
+    expected_num_classes = config["model"].get("num_classes")
+    if expected_num_classes is not None and num_classes != int(expected_num_classes):
         raise ValueError(
             f"Training CSV produced {num_classes} classes but config expects {expected_num_classes}. "
-            "Make sure all five target classes appear in the training CSV."
+            "Set model.num_classes to null to infer this from the selected label column."
         )
     class_names = [name for name, _ in sorted(class_to_idx.items(), key=lambda item: item[1])]
 
     if accelerator.is_main_process:
+        print_panel(
+            f"Model: {config['model']['name']}\n"
+            f"Label column: {label_column or 'auto-detect class_category/category'}\n"
+            f"Classes: {num_classes}\n"
+            f"Class labels: {', '.join(class_names)}",
+            title="Training Setup",
+        )
         write_json(class_to_idx, output_dir / "class_to_idx.json")
         write_yaml(config, output_dir / "resolved_config.yaml")
         write_json(get_env_info(), output_dir / "env_info.json")
@@ -243,6 +259,8 @@ def main() -> None:
         missing_files_log_path=output_dir / "missing_files_train.csv"
         if accelerator.is_main_process
         else None,
+        rows=train_rows,
+        row_filter_report=train_filter_report,
     )
     val_dataset = ImageCsvDataset(
         args.val_csv,
@@ -257,34 +275,78 @@ def main() -> None:
         missing_files_log_path=output_dir / "missing_files_validation.csv"
         if accelerator.is_main_process
         else None,
+        rows=val_rows,
+        row_filter_report=val_filter_report,
     )
 
     counts = class_counts(train_dataset.targets, num_classes)
     if accelerator.is_main_process:
         write_json({class_names[i]: int(counts[i]) for i in range(num_classes)}, output_dir / "class_counts.json")
+        print_table(
+            "Dataset Summary",
+            [
+                "split",
+                "raw rows",
+                "label-filtered",
+                "metadata-filtered",
+                "selected rows",
+                "usable images",
+                "missing images",
+            ],
+            [
+                [
+                    "train",
+                    train_dataset.total_rows,
+                    train_dataset.filtered_label_rows,
+                    train_dataset.filtered_metadata_rows,
+                    train_dataset.selected_rows,
+                    len(train_dataset),
+                    len(train_dataset.missing_rows),
+                ],
+                [
+                    "validation",
+                    val_dataset.total_rows,
+                    val_dataset.filtered_label_rows,
+                    val_dataset.filtered_metadata_rows,
+                    val_dataset.selected_rows,
+                    len(val_dataset),
+                    len(val_dataset.missing_rows),
+                ],
+            ],
+        )
         if train_dataset.missing_rows:
             LOGGER.warning(
                 "Skipped %d missing train images. See %s",
                 len(train_dataset.missing_rows),
                 output_dir / "missing_files_train.csv",
             )
+        else:
+            LOGGER.info("Skipped 0 missing train images.")
         if val_dataset.missing_rows:
             LOGGER.warning(
                 "Skipped %d missing validation images. See %s",
                 len(val_dataset.missing_rows),
                 output_dir / "missing_files_validation.csv",
             )
+        else:
+            LOGGER.info("Skipped 0 missing validation images.")
         zero_count_classes = [class_names[i] for i, count in enumerate(counts.tolist()) if count == 0]
         if zero_count_classes:
             LOGGER.warning("Classes with zero usable training images after filtering: %s", zero_count_classes)
 
     sampler = None
     if config["imbalance"]["weighted_sampler"]["enabled"]:
-        LOGGER.warning("Weighted sampler is enabled. For distributed training, validate convergence carefully.")
+        sampler_seed = int(config["imbalance"]["weighted_sampler"].get("seed") or config["seed"])
+        LOGGER.info(
+            "Weighted sampler is enabled with shared sampler seed %d. "
+            "All ranks build the same weighted stream and Accelerate shards it.",
+            sampler_seed,
+        )
         sampler = make_weighted_sampler(
             train_dataset.targets,
             counts,
             replacement=bool(config["imbalance"]["weighted_sampler"].get("replacement", True)),
+            seed=sampler_seed,
         )
 
     batch_size = int(config["training"]["per_device_batch_size"])
@@ -370,6 +432,10 @@ def main() -> None:
     max_grad_norm = float(config["training"].get("max_grad_norm") or 0.0)
 
     for epoch in range(start_epoch, epochs):
+        if sampler is not None and hasattr(sampler, "set_epoch"):
+            sampler.set_epoch(epoch)
+        if hasattr(train_loader, "set_epoch"):
+            train_loader.set_epoch(epoch)
         model.train()
         epoch_start = time.time()
         train_loss_values: list[torch.Tensor] = []
@@ -451,7 +517,9 @@ def main() -> None:
                 output_dir / "metrics.jsonl",
             )
 
-        current_metric = float(val_metrics.get(monitor, val_metrics["accuracy"]))
+        if monitor not in val_metrics or val_metrics[monitor] is None:
+            raise KeyError(f"checkpoint.monitor={monitor!r} is not available in validation metrics.")
+        current_metric = float(val_metrics[monitor])
         is_better = current_metric > best_metric if monitor_mode == "max" else current_metric < best_metric
         if accelerator.is_main_process and is_better:
             best_metric = current_metric

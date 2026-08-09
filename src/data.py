@@ -3,12 +3,18 @@ from __future__ import annotations
 import csv
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator, Mapping
 
 try:
-    from torch.utils.data import Dataset
+    from torch.utils.data import Dataset, Sampler
 except ModuleNotFoundError:  # Allows CSV validation without a PyTorch install.
     class Dataset:  # type: ignore[no-redef]
+        pass
+
+    class Sampler:  # type: ignore[no-redef]
+        def __class_getitem__(cls, item: Any) -> Any:
+            return cls
+
         pass
 
 
@@ -16,6 +22,16 @@ IMAGE_COLUMN = "image_path"
 NORMALIZED_LABEL_COLUMN = "category"
 DEFAULT_LABEL_COLUMNS = ("class_category", "category")
 MISSING_FILE_POLICIES = ("error", "skip")
+
+
+def load_rgb_image(path: str | Path) -> Any:
+    from PIL import Image, ImageOps
+
+    with Image.open(path) as img:
+        img = ImageOps.exif_transpose(img)
+        if img.mode == "P" and "transparency" in img.info:
+            return img.convert("RGBA").convert("RGB")
+        return img.convert("RGB")
 
 
 def resolve_csv_files(csv_source: str | Path) -> list[Path]:
@@ -65,14 +81,17 @@ def read_single_classification_csv(
     with csv_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         selected_label_column = select_label_column(reader.fieldnames, csv_path, label_column)
-        rows = [
-            {
-                IMAGE_COLUMN: (row.get(IMAGE_COLUMN) or "").strip(),
-                NORMALIZED_LABEL_COLUMN: (row.get(selected_label_column) or "").strip(),
-                "source_csv": str(csv_path),
+        rows = []
+        for row in reader:
+            cleaned_row = {
+                str(key): (value or "").strip()
+                for key, value in row.items()
+                if key is not None
             }
-            for row in reader
-        ]
+            cleaned_row[IMAGE_COLUMN] = (row.get(IMAGE_COLUMN) or "").strip()
+            cleaned_row[NORMALIZED_LABEL_COLUMN] = (row.get(selected_label_column) or "").strip()
+            cleaned_row["source_csv"] = str(csv_path)
+            rows.append(cleaned_row)
 
     if not rows:
         raise ValueError(f"CSV file is empty: {csv_path}")
@@ -101,11 +120,137 @@ def infer_class_to_idx(
     allowed_classes: list[str] | None = None,
 ) -> dict[str, int]:
     classes = sorted({row[NORMALIZED_LABEL_COLUMN] for row in rows})
+    if not classes:
+        raise ValueError("Cannot infer classes because the filtered training data has no labels.")
     if allowed_classes:
+        allowed_classes = [str(category) for category in allowed_classes]
         unknown = sorted(set(classes) - set(allowed_classes))
         if unknown:
             raise ValueError(f"Training CSV contains unknown categories: {unknown}")
+        missing = [category for category in allowed_classes if category not in classes]
+        if missing:
+            raise ValueError(f"Configured allowed_classes are absent from filtered training data: {missing}")
+        return {category: idx for idx, category in enumerate(allowed_classes)}
     return {category: idx for idx, category in enumerate(classes)}
+
+
+def normalize_filter_values(values: Any) -> list[str] | None:
+    if values is None:
+        return None
+    if isinstance(values, str):
+        values = [values]
+    normalized = [str(value).strip() for value in values if str(value).strip()]
+    return normalized or None
+
+
+def normalize_column_filters(filters: Mapping[str, Any] | None) -> dict[str, set[str]]:
+    if not filters:
+        return {}
+    normalized = {}
+    for column, values in filters.items():
+        normalized_values = normalize_filter_values(values)
+        if normalized_values:
+            normalized[str(column)] = set(normalized_values)
+    return normalized
+
+
+def filter_rows_by_label_values(
+    rows: list[dict[str, str]],
+    include: Any = None,
+    exclude: Any = None,
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    include_values = normalize_filter_values(include)
+    exclude_values = normalize_filter_values(exclude)
+    include_set = set(include_values) if include_values else None
+    exclude_set = set(exclude_values) if exclude_values else set()
+
+    kept_rows = []
+    dropped_rows = []
+    for row in rows:
+        label = row[NORMALIZED_LABEL_COLUMN]
+        keep = (include_set is None or label in include_set) and label not in exclude_set
+        if keep:
+            kept_rows.append(row)
+        else:
+            dropped_rows.append(row)
+    return kept_rows, dropped_rows
+
+
+def filter_rows_by_column_values(
+    rows: list[dict[str, str]],
+    include: Mapping[str, Any] | None = None,
+    exclude: Mapping[str, Any] | None = None,
+    split_name: str = "dataset",
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    include_filters = normalize_column_filters(include)
+    exclude_filters = normalize_column_filters(exclude)
+    if not include_filters and not exclude_filters:
+        return rows, []
+
+    known_columns = set().union(*(row.keys() for row in rows)) if rows else set()
+    missing_columns = sorted((set(include_filters) | set(exclude_filters)) - known_columns)
+    if missing_columns:
+        raise ValueError(f"{split_name} filters reference missing CSV columns: {missing_columns}")
+
+    kept_rows = []
+    dropped_rows = []
+    for row in rows:
+        included = all(row.get(column, "") in values for column, values in include_filters.items())
+        excluded = any(row.get(column, "") in values for column, values in exclude_filters.items())
+        if included and not excluded:
+            kept_rows.append(row)
+        else:
+            dropped_rows.append(row)
+    return kept_rows, dropped_rows
+
+
+def split_filter_config(data_cfg: dict[str, Any], key: str, split_name: str) -> dict[str, Any]:
+    filters = data_cfg.get(key) or {}
+    if split_name == "validation":
+        return filters.get("validation") or filters.get("val") or {}
+    return filters.get(split_name) or {}
+
+
+def apply_configured_row_filters(
+    rows: list[dict[str, str]],
+    data_cfg: dict[str, Any],
+    split_name: str,
+) -> tuple[list[dict[str, str]], dict[str, int]]:
+    original_count = len(rows)
+    label_filter_cfg = split_filter_config(data_cfg, "label_filters", split_name)
+    include_labels = normalize_filter_values(label_filter_cfg.get("include"))
+    allowed_classes = normalize_filter_values(data_cfg.get("allowed_classes"))
+    if allowed_classes is not None:
+        include_labels = (
+            [label for label in include_labels if label in set(allowed_classes)]
+            if include_labels is not None
+            else allowed_classes
+        )
+
+    rows, dropped_by_label = filter_rows_by_label_values(
+        rows,
+        include=include_labels,
+        exclude=label_filter_cfg.get("exclude"),
+    )
+
+    row_filter_cfg = split_filter_config(data_cfg, "row_filters", split_name)
+    rows, dropped_by_metadata = filter_rows_by_column_values(
+        rows,
+        include=row_filter_cfg.get("include"),
+        exclude=row_filter_cfg.get("exclude"),
+        split_name=split_name,
+    )
+    if not rows:
+        raise ValueError(
+            f"{split_name} dataset has no rows after applying label/metadata filters. "
+            f"Started with {original_count} rows."
+        )
+    return rows, {
+        "raw_rows": original_count,
+        "filtered_label_rows": len(dropped_by_label),
+        "filtered_metadata_rows": len(dropped_by_metadata),
+        "selected_rows": len(rows),
+    }
 
 
 def split_missing_rows(
@@ -193,10 +338,18 @@ class ImageCsvDataset(Dataset):
         label_column: str | None = None,
         missing_files_policy: str = "error",
         missing_files_log_path: str | Path | None = None,
+        rows: list[dict[str, str]] | None = None,
+        row_filter_report: dict[str, int] | None = None,
     ) -> None:
         self.csv_path = Path(csv_path)
         self.dataset_root = Path(dataset_root)
-        rows = read_classification_csv(self.csv_path, label_column=label_column)
+        rows = rows if rows is not None else read_classification_csv(self.csv_path, label_column=label_column)
+        row_filter_report = row_filter_report or {
+            "raw_rows": len(rows),
+            "filtered_label_rows": 0,
+            "filtered_metadata_rows": 0,
+            "selected_rows": len(rows),
+        }
         valid_rows, missing_rows = split_missing_rows(
             rows,
             self.dataset_root,
@@ -217,6 +370,10 @@ class ImageCsvDataset(Dataset):
             )
         if missing_rows and missing_files_log_path is not None:
             write_missing_files_log(missing_rows, missing_files_log_path)
+        self.total_rows = int(row_filter_report.get("raw_rows", len(rows)))
+        self.selected_rows = int(row_filter_report.get("selected_rows", len(rows)))
+        self.filtered_label_rows = int(row_filter_report.get("filtered_label_rows", 0))
+        self.filtered_metadata_rows = int(row_filter_report.get("filtered_metadata_rows", 0))
         self.rows = valid_rows
         self.missing_rows = missing_rows
         self.class_to_idx = class_to_idx
@@ -228,16 +385,9 @@ class ImageCsvDataset(Dataset):
         return len(self.rows)
 
     def __getitem__(self, index: int) -> tuple[Any, int] | tuple[Any, int, str]:
-        from PIL import Image, ImageOps
-
         row = self.rows[index]
         path = self.dataset_root / row[IMAGE_COLUMN]
-        with Image.open(path) as img:
-            img = ImageOps.exif_transpose(img)
-            if img.mode == "P" and "transparency" in img.info:
-                image = img.convert("RGBA").convert("RGB")
-            else:
-                image = img.convert("RGB")
+        image = load_rgb_image(path)
         if self.transform is not None:
             image = self.transform(image)
         label = self.class_to_idx[row[NORMALIZED_LABEL_COLUMN]]
@@ -270,14 +420,60 @@ def make_weighted_sampler(
     targets: list[int],
     counts: Any,
     replacement: bool = True,
+    seed: int = 0,
 ) -> Any:
     import torch
-    from torch.utils.data import WeightedRandomSampler
 
     class_weights = make_class_weights(counts)
     sample_weights = torch.tensor([class_weights[target].item() for target in targets], dtype=torch.double)
-    return WeightedRandomSampler(
+    return CoordinatedWeightedRandomSampler(
         weights=sample_weights,
         num_samples=len(sample_weights),
         replacement=replacement,
+        seed=seed,
     )
+
+
+class CoordinatedWeightedRandomSampler(Sampler[int]):
+    """Weighted sampler with a shared epoch seed for distributed Accelerate runs.
+
+    Every process builds the same weighted index stream for a given epoch. Accelerate
+    then shards that stream across processes, avoiding each GPU independently rolling
+    a different weighted sample sequence.
+    """
+
+    def __init__(
+        self,
+        weights: Any,
+        num_samples: int,
+        replacement: bool = True,
+        seed: int = 0,
+    ) -> None:
+        import torch
+
+        if num_samples <= 0:
+            raise ValueError(f"num_samples must be positive, got {num_samples}")
+        self.weights = torch.as_tensor(weights, dtype=torch.double)
+        self.num_samples = int(num_samples)
+        self.replacement = bool(replacement)
+        self.seed = int(seed)
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    def __iter__(self) -> Iterator[int]:
+        import torch
+
+        generator = torch.Generator()
+        generator.manual_seed(self.seed + self.epoch)
+        indices = torch.multinomial(
+            self.weights,
+            self.num_samples,
+            self.replacement,
+            generator=generator,
+        ).tolist()
+        return iter(indices)
+
+    def __len__(self) -> int:
+        return self.num_samples

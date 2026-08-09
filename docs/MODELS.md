@@ -24,6 +24,8 @@ Mappings:
 - DINOv2 small: `vit_small_patch14_dinov2.lvd142m`
 - DINOv2 base: `vit_base_patch14_dinov2.lvd142m`
 - DINOv2 large: `vit_large_patch14_dinov2.lvd142m`
+
+DINOv2 configs set `model.freeze_backbone: true` by default, so only the classifier head is trained unless you override it.
 - MobileNetV3 small 100: `mobilenetv3_small_100.lamb_in1k`
 - MobileNetV3 large 075: `mobilenetv3_large_075` with `pretrained: false`
 - MobileNetV3 large 100: `mobilenetv3_large_100.ra_in1k`

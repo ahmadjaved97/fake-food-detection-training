@@ -5,6 +5,7 @@ Validation metrics are computed after gathering predictions, labels, and probabi
 Logged metrics:
 
 - train loss
+- train accuracy
 - validation loss
 - accuracy
 - macro F1
@@ -22,6 +23,8 @@ Logged metrics:
 - throughput in images per second
 
 Macro metrics weight each class equally and are important for imbalanced data. Weighted metrics account for class frequency. Accuracy can be misleading when `real_bad` has few examples.
+
+The default best checkpoint monitors validation `macro_f1`, so the default best checkpoint is named `best_macro_f1.pt`.
 
 Multiclass ROC-AUC and PR-AUC can be enabled with:
 

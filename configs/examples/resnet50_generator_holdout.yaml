@@ -1,0 +1,20 @@
+data:
+  # Keep the prediction target as the class label, but split rows using a metadata column.
+  label_column: class_category
+  row_filters:
+    train:
+      include: {}
+      exclude:
+        generator_model:
+          - FLUX1-dev
+    validation:
+      include:
+        generator_model:
+          - FLUX1-dev
+      exclude: {}
+
+model:
+  name: resnet50
+  pretrained: true
+  num_classes: null
+

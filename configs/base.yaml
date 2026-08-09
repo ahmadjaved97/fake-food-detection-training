@@ -10,17 +10,40 @@ data:
   label_column: null
   # "skip" logs missing images and continues. Use "error" to fail fast.
   missing_files_policy: skip
-  allowed_classes:
-    - real_good
-    - real_bad
-    - fake_good
-    - fake_bad
-    - manipulated_bad
+  # Optional explicit label allow-list. null means infer labels from the selected train CSV column.
+  # When set, rows with other target labels are filtered out and class order follows this list.
+  allowed_classes: null
+  # Optional target-label filters by split. Values refer to the selected label_column after normalization.
+  # Example:
+  #   train:
+  #     include: [real_good, fake_good, fake_bad]
+  #     exclude: null
+  #   validation:
+  #     include: [real_good, fake_good, fake_bad]
+  #     exclude: null
+  label_filters:
+    train:
+      include: null
+      exclude: null
+    validation:
+      include: null
+      exclude: null
+  # Optional filters on any CSV metadata column. Useful for domain holdouts, e.g. train without
+  # one generator_model and validate only on that generator_model while keeping label_column fixed.
+  # include/exclude are mappings from column name to one or more accepted/rejected values.
+  row_filters:
+    train:
+      include: {}
+      exclude: {}
+    validation:
+      include: {}
+      exclude: {}
 
 model:
   name: resnet50
   pretrained: true
-  num_classes: 5
+  # null means infer num_classes from the selected train CSV label column.
+  num_classes: null
 
 training:
   epochs: 60
@@ -45,6 +68,15 @@ scheduler:
   min_lr_ratio: 0.01
 
 augmentations:
+  horizontal_flip_prob: 0.5
+  vertical_flip_prob: 0.0
+  rotation_degrees: 10
+  color_jitter:
+    enabled: false
+    brightness: 0.1
+    contrast: 0.1
+    saturation: 0.1
+    hue: 0.0
   random_erasing_prob: 0.0
   auto_augment: null
   rand_augment: null
@@ -59,6 +91,9 @@ imbalance:
   weighted_sampler:
     enabled: false
     replacement: true
+    # Shared across all ranks so weighted sampling is coordinated under Accelerate.
+    # null means use the top-level seed.
+    seed: null
   focal_loss:
     enabled: false
     gamma: 2.0
@@ -84,5 +119,5 @@ logging:
 checkpoint:
   save_epoch_checkpoints: false
   save_every_n_epochs: 1
-  monitor: accuracy
+  monitor: macro_f1
   mode: max

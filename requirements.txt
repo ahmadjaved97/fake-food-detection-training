@@ -11,3 +11,4 @@ tqdm>=4.66.0
 tensorboard>=2.14.0
 matplotlib>=3.7.0
 wandb>=0.16.0
+rich>=13.7.0

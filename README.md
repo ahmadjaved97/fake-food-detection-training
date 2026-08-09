@@ -1,17 +1,17 @@
 # Fake Food Detection Training
 
 Production-ready PyTorch image classification training using `timm` models and Hugging Face Accelerate.
-The target task is a 5-class fake food detection dataset:
+The default target task is fake food classification, but labels are configurable through the CSV label column. A common 5-class setup is:
 
 ```text
 real_good
 real_bad
 fake_good
-fully_fake_bad
-fake_bad_manipulated
+fake_bad
+manipulated_bad
 ```
 
-The code infers `class_to_idx` from the training CSV by sorting category names alphabetically, validates the validation CSV against that mapping, and saves `class_to_idx.json` in the output directory.
+These labels are examples, not hard-coded. The code infers `class_to_idx` from the selected and filtered training CSV label column, validates the validation CSV against that mapping, and saves `class_to_idx.json` in the output directory. If `data.allowed_classes` is set, that list controls both the target label subset and class order.
 
 ## Install
 
@@ -31,18 +31,31 @@ metadata/
     real_good.csv
     real_bad.csv
     fake_good.csv
-    fully_fake_bad.csv
-    fake_bad_manipulated.csv
+    fake_bad.csv
+    manipulated_bad.csv
   val/
     real_good.csv
     real_bad.csv
     fake_good.csv
-    fully_fake_bad.csv
-    fake_bad_manipulated.csv
+    fake_bad.csv
+    manipulated_bad.csv
 ```
 
-Each CSV must include `image_path` and a label column named `class_category`. Extra columns are allowed and ignored.
-The older label column name `category` is also supported.
+Each training CSV must include `image_path` and a label column. By default the code auto-detects `class_category`, then `category`. Extra columns are allowed and can be used for split filtering. To train on a different task, such as generative model family, set `data.label_column` or pass `--label-column`.
+
+For example, if your CSV has:
+
+```csv
+image_path,generator_model
+relative/path/to/image.jpg,flux
+relative/path/to/image2.jpg,sdxl
+```
+
+then this command trains a model whose output labels are `flux`, `sdxl`, and any other values found in `generator_model`:
+
+```bash
+scripts/train.sh --label-column generator_model
+```
 
 ```csv
 image_path,class_category,source,anything_else
@@ -73,6 +86,51 @@ To fail fast instead, set:
 ```yaml
 data:
   missing_files_policy: error
+```
+
+You can optionally choose which target labels are used in YAML:
+
+```yaml
+data:
+  allowed_classes:
+    - real_good
+    - fake_good
+    - fake_bad
+```
+
+This trains a 3-class model and filters out rows with other target labels from both train and validation. For one-off runs, the same can be passed on the command line:
+
+```bash
+accelerate launch --config_file accelerate_config.yaml src/train.py \
+  --config configs/models/resnet50.yaml \
+  --train-csv /path/to/metadata/train \
+  --val-csv /path/to/metadata/val \
+  --dataset-root /path/to/image_root \
+  --output-dir outputs/resnet50_three_class \
+  --allowed-classes real_good fake_good fake_bad
+```
+
+For a domain holdout, keep the prediction label fixed and filter using another CSV column:
+
+```yaml
+data:
+  label_column: class_category
+  row_filters:
+    train:
+      exclude:
+        generator_model: [FLUX1-dev]
+    validation:
+      include:
+        generator_model: [FLUX1-dev]
+```
+
+If the held-out value is itself the target label, it still has to appear in training; otherwise the classifier has no output for that class. For true domain holdouts, use `row_filters` on a metadata column while keeping `label_column` as the prediction target.
+
+Example configs:
+
+```text
+configs/examples/resnet50_three_class.yaml
+configs/examples/resnet50_generator_holdout.yaml
 ```
 
 ## Train One Model
@@ -161,11 +219,44 @@ Each run writes:
 - `class_counts.json`
 - `timm_data_config.json`
 - `env_info.json`
-- `best_accuracy.pt`
+- `best_macro_f1.pt` by default
 - `final.pt`
 - optional `checkpoint_epoch_XXX.pt`
 
 Checkpoints contain model, optimizer, scheduler, epoch, global step, best metric, config, and class mapping.
+
+## Evaluation
+
+Evaluate a checkpoint on a labeled CSV:
+
+```bash
+python3 scripts/evaluate.py \
+  --model-path outputs/resnet50_run/best_macro_f1.pt \
+  --csv /path/to/metadata/val \
+  --dataset-root /path/to/image_root \
+  --label-column class_category \
+  --predictions-csv outputs/resnet50_run/eval_predictions.csv \
+  --output-json outputs/resnet50_run/eval_metrics.json
+```
+
+Evaluate only selected labels from a larger CSV:
+
+```bash
+python3 scripts/evaluate.py \
+  --model-path outputs/resnet50_three_class/best_macro_f1.pt \
+  --csv /path/to/metadata/val \
+  --dataset-root /path/to/image_root \
+  --label-column class_category \
+  --include-labels real_good fake_good fake_bad
+```
+
+Classify one image:
+
+```bash
+python3 scripts/evaluate.py \
+  --model-path outputs/resnet50_run/best_macro_f1.pt \
+  --image-path /path/to/image.jpg
+```
 
 ## Imbalanced Data
 
@@ -176,6 +267,8 @@ The default loss is standard cross entropy, which is the safest baseline. The co
 - focal loss
 
 Because `real_bad` is the smallest class, watch macro F1 and per-class recall, not only accuracy. Enable imbalance strategies one at a time and compare validation macro F1 and minority-class recall.
+
+When `imbalance.weighted_sampler.enabled` is true in multi-GPU training, all ranks use the same sampler seed and Accelerate shards that shared weighted stream. This avoids each GPU independently drawing overlapping weighted samples in the same epoch.
 
 ## Models
 
