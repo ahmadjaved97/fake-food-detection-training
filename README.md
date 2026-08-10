@@ -218,6 +218,7 @@ Each run writes:
 - `class_to_idx.json`
 - `class_counts.json`
 - `timm_data_config.json`
+- `frequency_data_config.json` for frequency-domain runs
 - `env_info.json`
 - `best_macro_f1.pt` by default
 - `final.pt`
@@ -330,6 +331,73 @@ scripts/train_all_metaclip2_coop.sh
 ```
 
 The CLIP path only supports `class_category` labels matching `LABEL_TO_TEXT`: `real_good`, `real_bad`, `fake_good`, `fake_bad`, and `manipulated_bad`. It keeps `class_to_idx` based on raw CSV labels for metrics, but builds prompts from natural-language phrases.
+
+## Frequency-Domain Training
+
+Frequency-domain training uses a separate timm-only entrypoint and configs. RGB images are converted on the fly into either FFT magnitude maps or block-DCT coefficient maps, then replicated to 3 channels for pretrained backbones.
+
+Available starter configs:
+
+```text
+configs/frequency/resnet18_fft.yaml
+configs/frequency/resnet18_dct.yaml
+configs/frequency/resnet34_fft.yaml
+configs/frequency/resnet34_dct.yaml
+configs/frequency/resnet50_fft.yaml
+configs/frequency/resnet50_dct.yaml
+configs/frequency/mobilenetv3_small_100_fft.yaml
+configs/frequency/mobilenetv3_small_100_dct.yaml
+configs/frequency/mobilenetv3_large_075_fft.yaml
+configs/frequency/mobilenetv3_large_075_dct.yaml
+configs/frequency/mobilenetv3_large_100_fft.yaml
+configs/frequency/mobilenetv3_large_100_dct.yaml
+configs/frequency/convnext_tiny_fft.yaml
+configs/frequency/convnext_tiny_dct.yaml
+configs/frequency/swin_tiny_fft.yaml
+configs/frequency/swin_tiny_dct.yaml
+```
+
+Run one frequency model:
+
+```bash
+accelerate launch --config_file accelerate_config.yaml src/train_frequency.py \
+  --config configs/frequency/resnet50_fft.yaml \
+  --train-csv /path/to/metadata/train.csv \
+  --val-csv /path/to/metadata/val.csv \
+  --dataset-root /path/to/image_root \
+  --output-dir outputs/frequency_resnet50_fft
+```
+
+Or run the starter grid:
+
+```bash
+TRAIN_CSV=/path/to/metadata/train.csv \
+VAL_CSV=/path/to/metadata/val.csv \
+DATASET_ROOT=/path/to/image_root \
+scripts/train_all_frequency.sh
+```
+
+The first version uses frequency images only. It does not replace ViT/Swin patch embedding with DCT tokens yet. Images are resized before FFT/DCT, frequency maps remain float32, and DCT is computed with vectorized 8x8 blocks.
+
+To compute fixed normalization bounds from training images:
+
+```bash
+python3 scripts/compute_frequency_stats.py \
+  --csv /path/to/metadata/train.csv \
+  --dataset-root /path/to/image_root \
+  --mode fft_magnitude \
+  --include-labels real_good real_bad \
+  --output-json outputs/frequency_fft_real_stats.json
+```
+
+Then set:
+
+```yaml
+frequency:
+  normalization:
+    mode: fixed_minmax
+    stats_path: outputs/frequency_fft_real_stats.json
+```
 
 ## Troubleshooting
 

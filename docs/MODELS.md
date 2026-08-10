@@ -45,6 +45,29 @@ DINOv2 configs set `model.freeze_backbone: true` by default, so only the classif
 
 If a name is unavailable, update `model.name` in the YAML to a valid value returned by `timm.list_models(pattern, pretrained=True)`.
 
+## Frequency-Domain timm Models
+
+Frequency configs reuse normal timm backbones, but replace RGB image preprocessing with FFT/DCT frequency maps:
+
+- `configs/frequency/resnet50_fft.yaml`
+- `configs/frequency/resnet50_dct.yaml`
+- `configs/frequency/resnet18_fft.yaml`
+- `configs/frequency/resnet18_dct.yaml`
+- `configs/frequency/resnet34_fft.yaml`
+- `configs/frequency/resnet34_dct.yaml`
+- `configs/frequency/mobilenetv3_small_100_fft.yaml`
+- `configs/frequency/mobilenetv3_small_100_dct.yaml`
+- `configs/frequency/mobilenetv3_large_075_fft.yaml`
+- `configs/frequency/mobilenetv3_large_075_dct.yaml`
+- `configs/frequency/mobilenetv3_large_100_fft.yaml`
+- `configs/frequency/mobilenetv3_large_100_dct.yaml`
+- `configs/frequency/convnext_tiny_fft.yaml`
+- `configs/frequency/convnext_tiny_dct.yaml`
+- `configs/frequency/swin_tiny_fft.yaml`
+- `configs/frequency/swin_tiny_dct.yaml`
+
+These configs should be launched with `src/train_frequency.py`, not `src/train.py`.
+
 ## MetaCLIP 2 CoOp
 
 MetaCLIP 2 CoOp models use Hugging Face Transformers instead of `timm` and are trained with `src/train_metaclip_coop.py`.

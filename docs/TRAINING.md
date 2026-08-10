@@ -130,6 +130,30 @@ scripts/train_all_metaclip2_coop.sh
 
 The first CoOp implementation freezes the MetaCLIP 2 image and text encoders and trains only 16 shared learnable context tokens. Prompts use `LABEL_TO_TEXT` natural-language phrases, while metrics still use raw CSV labels.
 
+## Frequency-Domain Training
+
+Train timm models on FFT or DCT frequency images with `src/train_frequency.py`:
+
+```bash
+accelerate launch --config_file accelerate_config.yaml src/train_frequency.py \
+  --config configs/frequency/resnet50_fft.yaml \
+  --train-csv /path/to/metadata/train.csv \
+  --val-csv /path/to/metadata/val.csv \
+  --dataset-root /path/to/image_root \
+  --output-dir outputs/frequency_resnet50_fft
+```
+
+Run the starter grid:
+
+```bash
+TRAIN_CSV=/path/to/metadata/train.csv \
+VAL_CSV=/path/to/metadata/val.csv \
+DATASET_ROOT=/path/to/image_root \
+scripts/train_all_frequency.sh
+```
+
+Frequency transforms are computed on the fly after resizing each RGB image to the model input size. The first version uses float32 frequency maps as 3-channel images for existing pretrained timm backbones; DCT-token transformers are intentionally left for a later architecture-specific experiment.
+
 ## Offline W&B on a Cluster
 
 For compute nodes without internet, set W&B to offline mode in the YAML:

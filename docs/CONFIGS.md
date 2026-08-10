@@ -10,7 +10,7 @@ Important fields:
 - `data.label_filters`: optional include/exclude filters for values in the selected target label column, separately for `train` and `validation`.
 - `data.row_filters`: optional include/exclude filters on any CSV metadata column, separately for `train` and `validation`.
 - `model.name`: timm model name.
-- `model.family`: optional model family marker. `metaclip2_coop` configs use Hugging Face MetaCLIP 2 instead of `timm`.
+- `model.family`: optional model family marker. `frequency_timm` configs use frequency-domain preprocessing before timm models; `metaclip2_coop` configs use Hugging Face MetaCLIP 2 instead of `timm`.
 - `model.pretrained`: use pretrained weights.
 - `model.num_classes`: optional class-count assertion. `null` infers from training labels.
 - `model.freeze_backbone`: for DINOv2 configs, freeze the pretrained backbone and train only the classifier head.
@@ -100,3 +100,49 @@ Important fields:
 - `coop.context_std`: random initialization standard deviation for the context vectors.
 
 The configs intentionally use `data.label_filters` rather than `data.allowed_classes`, so class indices are still inferred with the existing sorted-label behavior after filtering to the five supported `class_category` values.
+
+## Frequency Configs
+
+Frequency-domain configs live in `configs/frequency/` and should be launched with `src/train_frequency.py`.
+
+Important fields:
+
+- `frequency.mode`: `fft_magnitude` or `dct_map`.
+- `frequency.block_size`: DCT block size. The starter DCT configs use `8`.
+- `frequency.normalization.mode`: `fixed_minmax` by default, or `percentile` for per-image percentile scaling.
+- `frequency.normalization.min_value` and `frequency.normalization.max_value`: optional fixed bounds. If omitted, analytical defaults are used.
+- `frequency.normalization.stats_path`: optional JSON from `scripts/compute_frequency_stats.py`.
+
+`fft_magnitude` does:
+
+```text
+RGB -> fixed-size resize -> luminance -> FFT2 -> abs -> log1p -> fftshift -> fixed normalize -> 3-channel float tensor
+```
+
+`dct_map` does:
+
+```text
+RGB -> fixed-size resize -> luminance -> vectorized 8x8 block DCT -> signed log1p coefficients -> fixed normalize -> 3-channel float tensor
+```
+
+The starter configs disable image augmentations because geometric/color augmentations can change or obscure the frequency statistics being measured. They also avoid an 8-bit PIL round trip, so frequency maps stay float32 until model normalization.
+
+To compute dataset-level normalization bounds once:
+
+```bash
+python3 scripts/compute_frequency_stats.py \
+  --csv /path/to/metadata/train.csv \
+  --dataset-root /path/to/image_root \
+  --mode fft_magnitude \
+  --include-labels real_good real_bad \
+  --output-json outputs/frequency_fft_real_stats.json
+```
+
+Then point a frequency config at that JSON:
+
+```yaml
+frequency:
+  normalization:
+    mode: fixed_minmax
+    stats_path: outputs/frequency_fft_real_stats.json
+```
