@@ -11,6 +11,13 @@ from torchvision import transforms
 def _is_dinov2_model(model_name: str) -> bool:
     return "dinov2" in model_name.lower()
 
+def _is_dinov3_model(model_name: str) -> bool:
+    return "dinov3" in model_name.lower()
+
+
+def _is_dino_model(model_name: str) -> bool:
+    model_name = model_name.lower()
+    return "dinov2" in model_name or "dinov3" in model_name
 
 def _classifier_parameter_ids(model: nn.Module) -> set[int]:
     classifier = model.get_classifier() if hasattr(model, "get_classifier") else None
@@ -43,8 +50,10 @@ def create_model(config: dict[str, Any], num_classes: int) -> nn.Module:
     for param in model.parameters():
         param.requires_grad = True
     if bool(model_cfg.get("freeze_backbone", False)):
-        if not _is_dinov2_model(model_cfg["name"]):
-            raise ValueError("model.freeze_backbone is currently supported only for DINOv2 timm models.")
+        if not _is_dino_model(model_cfg["name"]):
+            print(model_cfg["name"])
+            print("\n\n")
+            raise ValueError("model.freeze_backbone is currently supported only for DINOv2 and DINOv3 timm models.")
         freeze_backbone_except_classifier(model)
     return model
 

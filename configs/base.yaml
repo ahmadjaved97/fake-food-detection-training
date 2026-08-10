@@ -7,7 +7,7 @@ data:
   validate_files: true
   return_paths: false
   # null means auto-detect class_category first, then category.
-  label_column: null
+  label_column: data_category
   # "skip" logs missing images and continues. Use "error" to fail fast.
   missing_files_policy: skip
   # Optional explicit label allow-list. null means infer labels from the selected train CSV column.
@@ -70,7 +70,7 @@ scheduler:
 augmentations:
   horizontal_flip_prob: 0.5
   vertical_flip_prob: 0.0
-  rotation_degrees: 10
+  rotation_degrees: 0
   color_jitter:
     enabled: false
     brightness: 0.1
@@ -105,7 +105,7 @@ logging:
   log_every_steps: 50
   wandb:
     enabled: true
-    project: fake-food-detection_models
+    project: fake-food-v1
     entity: null
     # Set to "offline" on compute nodes without internet, then sync from a login node.
     mode: online

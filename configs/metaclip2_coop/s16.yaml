@@ -1,5 +1,5 @@
 data:
-  label_column: class_category
+  label_column: data_category
   allowed_classes: null
   label_filters:
     train:
@@ -40,7 +40,7 @@ scheduler:
 augmentations:
   horizontal_flip_prob: 0.5
   vertical_flip_prob: 0.0
-  rotation_degrees: 5
+  rotation_degrees: null
   color_jitter:
     enabled: false
   random_erasing_prob: 0.0
@@ -53,3 +53,18 @@ augmentations:
 checkpoint:
   monitor: macro_f1
   mode: max
+
+logging:
+  log_every_steps: 50
+  wandb:
+    enabled: true
+    project: metacoop-test
+    entity: null
+    # Set to "offline" on compute nodes without internet, then sync from a login node.
+    mode: online
+    tags: []
+  tensorboard:
+    enabled: false
+  wrong_examples:
+    enabled: true
+    max_images: 5
