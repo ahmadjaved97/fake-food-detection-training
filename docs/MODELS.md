@@ -65,6 +65,22 @@ Frequency configs reuse normal timm backbones, but replace RGB image preprocessi
 - `configs/frequency/convnext_tiny_dct.yaml`
 - `configs/frequency/swin_tiny_fft.yaml`
 - `configs/frequency/swin_tiny_dct.yaml`
+- `configs/frequency/vit_tiny_fft.yaml`
+- `configs/frequency/vit_tiny_dct.yaml`
+- `configs/frequency/vit_small_fft.yaml`
+- `configs/frequency/vit_small_dct.yaml`
+- `configs/frequency/vit_base_fft.yaml`
+- `configs/frequency/vit_base_dct.yaml`
+- `configs/frequency/vit_large_fft.yaml`
+- `configs/frequency/vit_large_dct.yaml`
+- `configs/frequency/dinov3_small_fft.yaml`
+- `configs/frequency/dinov3_small_dct.yaml`
+- `configs/frequency/dinov3_small_plus_fft.yaml`
+- `configs/frequency/dinov3_small_plus_dct.yaml`
+- `configs/frequency/dinov3_base_fft.yaml`
+- `configs/frequency/dinov3_base_dct.yaml`
+- `configs/frequency/dinov3_large_fft.yaml`
+- `configs/frequency/dinov3_large_dct.yaml`
 
 These configs should be launched with `src/train_frequency.py`, not `src/train.py`.
 

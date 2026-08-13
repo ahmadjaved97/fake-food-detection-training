@@ -20,7 +20,23 @@ for config in \
   configs/frequency/convnext_tiny_fft.yaml \
   configs/frequency/convnext_tiny_dct.yaml \
   configs/frequency/swin_tiny_fft.yaml \
-  configs/frequency/swin_tiny_dct.yaml
+  configs/frequency/swin_tiny_dct.yaml \
+  configs/frequency/vit_tiny_fft.yaml \
+  configs/frequency/vit_tiny_dct.yaml \
+  configs/frequency/vit_small_fft.yaml \
+  configs/frequency/vit_small_dct.yaml \
+  configs/frequency/vit_base_fft.yaml \
+  configs/frequency/vit_base_dct.yaml \
+  configs/frequency/vit_large_fft.yaml \
+  configs/frequency/vit_large_dct.yaml \
+  configs/frequency/dinov3_small_fft.yaml \
+  configs/frequency/dinov3_small_dct.yaml \
+  configs/frequency/dinov3_small_plus_fft.yaml \
+  configs/frequency/dinov3_small_plus_dct.yaml \
+  configs/frequency/dinov3_base_fft.yaml \
+  configs/frequency/dinov3_base_dct.yaml \
+  configs/frequency/dinov3_large_fft.yaml \
+  configs/frequency/dinov3_large_dct.yaml
 do
   name="frequency_$(basename "${config}" .yaml)"
   CONFIG="${config}" OUTPUT_DIR="${OUTPUT_BASE:-outputs}/${name}" "${REPO_ROOT}/scripts/train_frequency.sh" "$@"
