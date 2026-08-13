@@ -35,3 +35,17 @@ augmentations:
   cutmix_alpha: 0.0
   label_smoothing: 0.0
 
+logging:
+  log_every_steps: 50
+  wandb:
+    enabled: true
+    project: fake-food-freq
+    entity: null
+    # Set to "offline" on compute nodes without internet, then sync from a login node.
+    mode: online
+    tags: []
+  tensorboard:
+    enabled: false
+  wrong_examples:
+    enabled: true
+    max_images: 5
