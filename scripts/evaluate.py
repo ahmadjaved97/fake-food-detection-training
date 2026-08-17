@@ -15,7 +15,14 @@ if str(PROJECT_ROOT) not in sys.path:
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from src.data import IMAGE_COLUMN, filter_rows_by_label_values, load_rgb_image, resolve_csv_files, select_label_column
+from src.data import (
+    IMAGE_COLUMN,
+    filter_rows_by_column_values,
+    filter_rows_by_label_values,
+    load_rgb_image,
+    resolve_csv_files,
+    select_label_column,
+)
 from src.metrics import compute_classification_metrics
 from src.models import create_model, create_transforms
 from src.rich_utils import print_panel, print_table
@@ -55,7 +62,9 @@ def read_eval_csv(
     class_to_idx: dict[str, int],
     include_labels: list[str] | None = None,
     exclude_labels: list[str] | None = None,
-) -> tuple[list[dict[str, Any]], bool]:
+    include_column_values: dict[str, list[str]] | None = None,
+    exclude_column_values: dict[str, list[str]] | None = None,
+) -> tuple[list[dict[str, Any]], bool, dict[str, int]]:
     rows: list[dict[str, Any]] = []
     has_labels = True
     for csv_path in resolve_csv_files(csv_source):
@@ -71,27 +80,61 @@ def read_eval_csv(
                 selected_label_column = None
                 has_labels = False
             for csv_row in reader:
-                image_path = (csv_row.get(IMAGE_COLUMN) or "").strip()
+                row = {
+                    str(key): (value or "").strip()
+                    for key, value in csv_row.items()
+                    if key is not None
+                }
+                image_path = row.get(IMAGE_COLUMN, "")
                 if not image_path:
                     continue
-                row: dict[str, Any] = {IMAGE_COLUMN: image_path, "source_csv": str(csv_path)}
+                row[IMAGE_COLUMN] = image_path
+                row["source_csv"] = str(csv_path)
                 if selected_label_column is not None:
-                    label = (csv_row.get(selected_label_column) or "").strip()
+                    label = row.get(selected_label_column, "")
                     row["category"] = label
                 rows.append(row)
     if not rows:
         raise ValueError(f"No images found in CSV source: {csv_source}")
+    filter_report = {"loaded": len(rows), "dropped_by_label_filters": 0, "dropped_by_column_filters": 0}
     if include_labels or exclude_labels:
         if not has_labels:
             raise ValueError("--include-labels/--exclude-labels require a CSV label column.")
-        rows, _ = filter_rows_by_label_values(rows, include=include_labels, exclude=exclude_labels)
+        rows, dropped_rows = filter_rows_by_label_values(rows, include=include_labels, exclude=exclude_labels)
+        filter_report["dropped_by_label_filters"] = len(dropped_rows)
     if not rows:
         raise ValueError(f"No images left after applying label filters for CSV source: {csv_source}")
+    if include_column_values or exclude_column_values:
+        rows, dropped_rows = filter_rows_by_column_values(
+            rows,
+            include=include_column_values,
+            exclude=exclude_column_values,
+            split_name="evaluation CSV",
+        )
+        filter_report["dropped_by_column_filters"] = len(dropped_rows)
+    if not rows:
+        raise ValueError(f"No images left after applying column filters for CSV source: {csv_source}")
+    filter_report["kept"] = len(rows)
     if has_labels:
         unknown_labels = sorted({row["category"] for row in rows} - set(class_to_idx))
         if unknown_labels:
             raise ValueError(f"CSV contains labels not found in checkpoint classes: {unknown_labels}")
-    return rows, has_labels
+    return rows, has_labels, filter_report
+
+
+def parse_column_value_filters(raw_filters: list[list[str]] | None) -> dict[str, list[str]]:
+    filters: dict[str, list[str]] = {}
+    if not raw_filters:
+        return filters
+    for raw_filter in raw_filters:
+        if len(raw_filter) < 2:
+            raise ValueError("Column filters must be passed as: COLUMN VALUE [VALUE ...]")
+        column = raw_filter[0].strip()
+        values = [value.strip() for value in raw_filter[1:] if value.strip()]
+        if not column or not values:
+            raise ValueError("Column filters require a non-empty column name and at least one non-empty value.")
+        filters.setdefault(column, []).extend(values)
+    return filters
 
 
 def load_checkpoint_model(model_path: str | Path, device: torch.device) -> tuple[Any, dict[str, Any], dict[str, int]]:
@@ -168,6 +211,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--label-column", default=None, help="CSV label column for metrics.")
     parser.add_argument("--include-labels", nargs="+", default=None, help="Evaluate only these label values.")
     parser.add_argument("--exclude-labels", nargs="+", default=None, help="Exclude these label values from evaluation.")
+    parser.add_argument(
+        "--include-column-values",
+        nargs="+",
+        action="append",
+        default=None,
+        metavar=("COLUMN", "VALUE"),
+        help="Keep rows where COLUMN equals any listed VALUE. Repeat for multiple columns.",
+    )
+    parser.add_argument(
+        "--exclude-column-values",
+        nargs="+",
+        action="append",
+        default=None,
+        metavar=("COLUMN", "VALUE"),
+        help="Drop rows where COLUMN equals any listed VALUE. Repeat for multiple columns.",
+    )
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -202,12 +261,16 @@ def main() -> None:
         )
         print_table("Top Classes", ["class", "probability"], [[name, f"{prob:.4f}"] for name, prob in top_items])
     else:
-        rows, has_labels = read_eval_csv(
+        include_column_values = parse_column_value_filters(args.include_column_values)
+        exclude_column_values = parse_column_value_filters(args.exclude_column_values)
+        rows, has_labels, filter_report = read_eval_csv(
             args.csv,
             args.label_column,
             class_to_idx,
             include_labels=args.include_labels,
             exclude_labels=args.exclude_labels,
+            include_column_values=include_column_values,
+            exclude_column_values=exclude_column_values,
         )
         dataset = EvaluationDataset(rows, args.dataset_root, val_transform, class_to_idx if has_labels else None)
         dataloader = DataLoader(
@@ -220,8 +283,16 @@ def main() -> None:
         predictions = predict(model, dataloader, device, class_names)
         print_table(
             "Evaluation Input",
-            ["images", "labels available"],
-            [[len(predictions), "yes" if has_labels else "no"]],
+            ["loaded", "kept", "dropped labels", "dropped columns", "labels available"],
+            [
+                [
+                    filter_report["loaded"],
+                    filter_report["kept"],
+                    filter_report["dropped_by_label_filters"],
+                    filter_report["dropped_by_column_filters"],
+                    "yes" if has_labels else "no",
+                ]
+            ],
         )
         if has_labels:
             labels = torch.tensor([class_to_idx[pred["true_label"]] for pred in predictions]).numpy()
@@ -229,6 +300,8 @@ def main() -> None:
                 [[pred["probabilities"][class_name] for class_name in class_names] for pred in predictions]
             ).numpy()
             metrics = compute_classification_metrics(labels, probabilities, class_names, args.enable_auc)
+            metrics["num_images"] = len(predictions)
+            metrics["filter_report"] = filter_report
             print_table(
                 "Metrics",
                 ["metric", "value"],

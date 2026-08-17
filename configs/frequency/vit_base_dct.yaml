@@ -53,3 +53,8 @@ logging:
     enabled: true
     max_images: 5
 
+checkpoint:
+  save_epoch_checkpoints: true
+  save_every_n_epochs: 3
+  monitor: macro_f1
+  mode: max
