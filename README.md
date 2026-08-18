@@ -253,6 +253,32 @@ python3 scripts/evaluate.py \
   --include-labels real_good fake_good fake_bad
 ```
 
+Evaluate in-distribution rows by excluding held-out generator models:
+
+```bash
+python3 scripts/evaluate.py \
+  --model-path outputs/resnet50_run/best_macro_f1.pt \
+  --csv /path/to/metadata/val.csv \
+  --dataset-root /path/to/image_root \
+  --label-column class_category \
+  --exclude-column-values generator_model gemini gpt \
+  --output-json outputs/resnet50_run/eval_id_metrics.json
+```
+
+Evaluate out-of-distribution rows by keeping only held-out generator models:
+
+```bash
+python3 scripts/evaluate.py \
+  --model-path outputs/resnet50_run/best_macro_f1.pt \
+  --csv /path/to/metadata/val.csv \
+  --dataset-root /path/to/image_root \
+  --label-column class_category \
+  --include-column-values generator_model gemini gpt \
+  --output-json outputs/resnet50_run/eval_ood_metrics.json
+```
+
+Column filters use exact CSV values and can be repeated for multiple metadata columns.
+
 Classify one image:
 
 ```bash
