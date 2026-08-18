@@ -441,6 +441,42 @@ frequency:
     stats_path: outputs/frequency_fft_real_stats.json
 ```
 
+## RGB + FFT Fusion Training
+
+Fusion training uses a separate entrypoint and configs. It creates two independent copies of the same timm backbone: one branch receives deterministic RGB tensors, the other receives the existing FFT magnitude tensors. Their pooled feature vectors are concatenated and passed through a small MLP classification head.
+
+Available fusion configs:
+
+```text
+configs/fusion/resnet18_rgb_fft.yaml
+configs/fusion/resnet34_rgb_fft.yaml
+configs/fusion/resnet50_rgb_fft.yaml
+configs/fusion/vit_small_rgb_fft.yaml
+configs/fusion/dinov3_small_rgb_fft.yaml
+configs/fusion/convnext_tiny_rgb_fft.yaml
+```
+
+Run one fusion model:
+
+```bash
+CONFIG=configs/fusion/resnet50_rgb_fft.yaml \
+TRAIN_CSV=/path/to/metadata/train.csv \
+VAL_CSV=/path/to/metadata/val.csv \
+DATASET_ROOT=/path/to/image_root \
+scripts/train_fusion.sh
+```
+
+Run all fusion configs:
+
+```bash
+TRAIN_CSV=/path/to/metadata/train.csv \
+VAL_CSV=/path/to/metadata/val.csv \
+DATASET_ROOT=/path/to/image_root \
+scripts/train_all_fusion.sh
+```
+
+The first fusion baseline disables augmentation deliberately. The RGB and FFT branches should describe the same image evidence; random crop, rotation, interpolation, blur, color jitter, Mixup, or CutMix can change the spectral signal itself. A deterministic resize keeps both branches paired cleanly and makes the result easier to interpret before running augmentation ablations.
+
 ## Troubleshooting
 
 - Missing images: run `scripts/validate_csv.py`.
