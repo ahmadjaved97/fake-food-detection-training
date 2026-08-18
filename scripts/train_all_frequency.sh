@@ -19,6 +19,10 @@ for config in \
   configs/frequency/mobilenetv3_large_100_dct.yaml \
   configs/frequency/convnext_tiny_fft.yaml \
   configs/frequency/convnext_tiny_dct.yaml \
+  configs/frequency/convnext_small_fft.yaml \
+  configs/frequency/convnext_small_dct.yaml \
+  configs/frequency/convnext_base_fft.yaml \
+  configs/frequency/convnext_base_dct.yaml \
   configs/frequency/swin_tiny_fft.yaml \
   configs/frequency/swin_tiny_dct.yaml \
   configs/frequency/vit_tiny_fft.yaml \

@@ -379,6 +379,10 @@ configs/frequency/mobilenetv3_large_100_fft.yaml
 configs/frequency/mobilenetv3_large_100_dct.yaml
 configs/frequency/convnext_tiny_fft.yaml
 configs/frequency/convnext_tiny_dct.yaml
+configs/frequency/convnext_small_fft.yaml
+configs/frequency/convnext_small_dct.yaml
+configs/frequency/convnext_base_fft.yaml
+configs/frequency/convnext_base_dct.yaml
 configs/frequency/swin_tiny_fft.yaml
 configs/frequency/swin_tiny_dct.yaml
 configs/frequency/vit_tiny_fft.yaml
@@ -420,6 +424,18 @@ scripts/train_all_frequency.sh
 ```
 
 The first version uses frequency images only. It does not replace ViT/Swin patch embedding with DCT tokens yet. Images are resized before FFT/DCT, frequency maps remain float32, and DCT is computed with vectorized 8x8 blocks.
+
+Evaluate a frequency-domain checkpoint with the same flags as RGB evaluation:
+
+```bash
+python3 scripts/evaluate_frequency.py \
+  --model-path outputs/frequency_resnet50_fft/best_macro_f1.pt \
+  --csv /path/to/metadata/val.csv \
+  --dataset-root /path/to/image_root \
+  --label-column data_category \
+  --predictions-csv outputs/frequency_resnet50_fft/eval_predictions.csv \
+  --output-json outputs/frequency_resnet50_fft/eval_metrics.json
+```
 
 To compute fixed normalization bounds from training images:
 
@@ -473,6 +489,18 @@ TRAIN_CSV=/path/to/metadata/train.csv \
 VAL_CSV=/path/to/metadata/val.csv \
 DATASET_ROOT=/path/to/image_root \
 scripts/train_all_fusion.sh
+```
+
+Evaluate a fusion checkpoint with the same flags as RGB evaluation:
+
+```bash
+python3 scripts/evaluate_fusion.py \
+  --model-path outputs/resnet50_rgb_fft/best_macro_f1.pt \
+  --csv /path/to/metadata/val.csv \
+  --dataset-root /path/to/image_root \
+  --label-column data_category \
+  --predictions-csv outputs/resnet50_rgb_fft/eval_predictions.csv \
+  --output-json outputs/resnet50_rgb_fft/eval_metrics.json
 ```
 
 The first fusion baseline disables augmentation deliberately. The RGB and FFT branches should describe the same image evidence; random crop, rotation, interpolation, blur, color jitter, Mixup, or CutMix can change the spectral signal itself. A deterministic resize keeps both branches paired cleanly and makes the result easier to interpret before running augmentation ablations.
