@@ -137,6 +137,39 @@ def parse_column_value_filters(raw_filters: list[list[str]] | None) -> dict[str,
     return filters
 
 
+def normalize_checkpoint_state_dict(state_dict: dict[str, Any]) -> dict[str, Any]:
+    normalized = {}
+    for key, value in state_dict.items():
+        normalized_key = key
+        changed = True
+        while changed:
+            changed = False
+            for prefix in ("_orig_mod.", "module."):
+                if normalized_key.startswith(prefix):
+                    normalized_key = normalized_key[len(prefix) :]
+                    changed = True
+        normalized[normalized_key] = value
+    return normalized
+
+
+def load_model_state_dict(
+    model: Any,
+    state_dict: dict[str, Any],
+    model_path: str | Path,
+    expected_checkpoint_type: str,
+) -> None:
+    normalized_state_dict = normalize_checkpoint_state_dict(state_dict)
+    try:
+        model.load_state_dict(normalized_state_dict)
+    except RuntimeError as exc:
+        first_keys = list(state_dict.keys())[:10]
+        raise RuntimeError(
+            f"Could not load {expected_checkpoint_type} checkpoint from {model_path}. "
+            "Make sure the checkpoint was produced by the matching training script and uses the same model.name. "
+            f"First checkpoint keys: {first_keys}"
+        ) from exc
+
+
 def load_checkpoint_model(model_path: str | Path, device: torch.device) -> tuple[Any, dict[str, Any], dict[str, int]]:
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
     if "config" not in checkpoint or "class_to_idx" not in checkpoint:
@@ -146,7 +179,7 @@ def load_checkpoint_model(model_path: str | Path, device: torch.device) -> tuple
     config["model"]["pretrained"] = False
     model = create_model(config, num_classes=len(class_to_idx))
     state_dict = checkpoint["model"] if "model" in checkpoint else checkpoint
-    model.load_state_dict(state_dict)
+    load_model_state_dict(model, state_dict, model_path, "RGB timm")
     model.to(device)
     model.eval()
     return model, config, class_to_idx

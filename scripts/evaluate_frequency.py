@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader
 from scripts.evaluate import (
     EvaluationDataset,
     build_arg_parser,
+    load_model_state_dict,
     parse_column_value_filters,
     predict,
     read_eval_csv,
@@ -40,7 +41,7 @@ def load_checkpoint_model(model_path: str | Path, device: torch.device) -> tuple
     config["model"]["pretrained"] = False
     model = create_model(config, num_classes=len(class_to_idx))
     state_dict = checkpoint["model"] if "model" in checkpoint else checkpoint
-    model.load_state_dict(state_dict)
+    load_model_state_dict(model, state_dict, model_path, "frequency timm")
     model.to(device)
     model.eval()
     return model, config, class_to_idx

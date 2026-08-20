@@ -15,6 +15,8 @@ from torch.utils.data import DataLoader
 from scripts.evaluate import (
     EvaluationDataset,
     build_arg_parser,
+    load_model_state_dict,
+    normalize_checkpoint_state_dict,
     parse_column_value_filters,
     read_eval_csv,
     write_predictions_csv,
@@ -49,7 +51,19 @@ def load_checkpoint_model(model_path: str | Path, device: torch.device) -> tuple
     config["model"]["pretrained"] = False
     model = create_rgb_fft_fusion_model(config, num_classes=len(class_to_idx))
     state_dict = checkpoint["model"] if "model" in checkpoint else checkpoint
-    model.load_state_dict(state_dict)
+    normalized_state_dict = normalize_checkpoint_state_dict(state_dict)
+    has_fusion_keys = any(
+        key.startswith(("rgb_backbone.", "fft_backbone."))
+        for key in normalized_state_dict
+    )
+    if not has_fusion_keys:
+        first_keys = list(state_dict.keys())[:10]
+        raise ValueError(
+            "This checkpoint does not look like an RGB+FFT fusion checkpoint. "
+            "Use scripts/evaluate.py for RGB checkpoints or scripts/evaluate_frequency.py for FFT/DCT checkpoints. "
+            f"First checkpoint keys: {first_keys}"
+        )
+    load_model_state_dict(model, state_dict, model_path, "RGB+FFT fusion")
     model.to(device)
     model.eval()
     return model, config, class_to_idx
