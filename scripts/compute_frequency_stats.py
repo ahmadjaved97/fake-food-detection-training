@@ -13,16 +13,42 @@ import numpy as np
 from tqdm import tqdm
 
 from src.data import IMAGE_COLUMN, filter_rows_by_label_values, load_rgb_image, read_classification_csv
-from src.frequency_transforms import dct_coefficient_map, fft_magnitude_map, resize_rgb_image, rgb_to_luminance
+from src.frequency_transforms import (
+    dct_coefficient_map,
+    fft_magnitude_map,
+    fft_magnitude_rgb_map,
+    resize_rgb_image,
+    rgb_to_float_array,
+    rgb_to_luminance,
+)
 from src.utils import write_json
 
 
-def compute_frequency_map(image_path: Path, mode: str, image_size: int, block_size: int) -> np.ndarray:
+def normalize_channel_mode(channel_mode: str) -> str:
+    normalized = channel_mode.strip().lower().replace("-", "_")
+    if normalized in {"luminance", "luma", "y"}:
+        return "luminance"
+    if normalized in {"rgb", "per_channel", "per_channel_fft", "per_channel_rgb"}:
+        return "rgb"
+    raise ValueError("--channel-mode must be luminance or rgb.")
+
+
+def compute_frequency_map(
+    image_path: Path,
+    mode: str,
+    image_size: int,
+    block_size: int,
+    channel_mode: str,
+) -> np.ndarray:
     image = resize_rgb_image(load_rgb_image(image_path), image_size)
-    luminance = rgb_to_luminance(image)
     if mode == "fft_magnitude":
-        return fft_magnitude_map(luminance)
+        if channel_mode == "rgb":
+            return fft_magnitude_rgb_map(rgb_to_float_array(image))
+        return fft_magnitude_map(rgb_to_luminance(image))
     if mode == "dct_map":
+        if channel_mode != "luminance":
+            raise ValueError("--channel-mode rgb is currently supported only for --mode fft_magnitude.")
+        luminance = rgb_to_luminance(image)
         return dct_coefficient_map(luminance, block_size=block_size)
     raise ValueError(f"Unsupported frequency mode: {mode}")
 
@@ -36,6 +62,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--include-labels", nargs="+", default=None)
     parser.add_argument("--exclude-labels", nargs="+", default=None)
     parser.add_argument("--mode", choices=["fft_magnitude", "dct_map"], required=True)
+    parser.add_argument(
+        "--channel-mode",
+        choices=["luminance", "rgb"],
+        default="luminance",
+        help="Use luminance FFT/DCT or per-channel RGB FFT. RGB is valid only with --mode fft_magnitude.",
+    )
     parser.add_argument("--image-size", type=int, default=224)
     parser.add_argument("--block-size", type=int, default=8)
     parser.add_argument("--lower-percentile", type=float, default=1.0)
@@ -48,6 +80,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_arg_parser().parse_args()
+    channel_mode = normalize_channel_mode(args.channel_mode)
     rng = np.random.default_rng(args.seed)
     dataset_root = Path(args.dataset_root)
     rows = read_classification_csv(args.csv, label_column=args.label_column)
@@ -72,6 +105,7 @@ def main() -> None:
             mode=args.mode,
             image_size=args.image_size,
             block_size=args.block_size,
+            channel_mode=channel_mode,
         )
         flat = frequency_map.reshape(-1)
         sample_size = min(args.sample_pixels_per_image, flat.shape[0])
@@ -86,6 +120,7 @@ def main() -> None:
     write_json(
         {
             "mode": args.mode,
+            "channel_mode": channel_mode,
             "image_size": args.image_size,
             "block_size": args.block_size,
             "normalization_mode": "fixed_minmax",
@@ -103,4 +138,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

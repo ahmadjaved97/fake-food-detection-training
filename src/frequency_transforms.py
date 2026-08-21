@@ -19,6 +19,10 @@ def rgb_to_luminance(image: Image.Image) -> np.ndarray:
     return 0.299 * array[..., 0] + 0.587 * array[..., 1] + 0.114 * array[..., 2]
 
 
+def rgb_to_float_array(image: Image.Image) -> np.ndarray:
+    return np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
+
+
 def percentile_normalize(
     array: np.ndarray,
     lower_percentile: float = 1.0,
@@ -87,6 +91,12 @@ def fft_magnitude_map(luminance: np.ndarray) -> np.ndarray:
     return np.fft.fftshift(magnitude).astype(np.float32)
 
 
+def fft_magnitude_rgb_map(rgb: np.ndarray) -> np.ndarray:
+    spectrum = np.fft.fft2(rgb, axes=(0, 1))
+    magnitude = np.log1p(np.abs(spectrum))
+    return np.fft.fftshift(magnitude, axes=(0, 1)).astype(np.float32)
+
+
 def dct_coefficient_map(
     luminance: np.ndarray,
     block_size: int,
@@ -122,6 +132,9 @@ class FrequencyImageTransform:
         input_size = data_config.get("input_size", (3, 224, 224))
         self.image_size = int(input_size[-1])
         self.frequency_cfg = frequency_cfg
+        self.channel_mode = self._normalize_channel_mode(str(frequency_cfg.get("channel_mode", "luminance")))
+        if self.mode == "dct_map" and self.channel_mode != "luminance":
+            raise ValueError("frequency.channel_mode=rgb is currently supported only for frequency.mode=fft_magnitude.")
         self.normalization = resolve_normalization_config(frequency_cfg)
         self.block_size = int(frequency_cfg.get("block_size", 8))
         self.mean = torch.tensor(
@@ -132,6 +145,15 @@ class FrequencyImageTransform:
             tuple(float(value) for value in data_config.get("std", (0.229, 0.224, 0.225))),
             dtype=torch.float32,
         ).view(3, 1, 1)
+
+    @staticmethod
+    def _normalize_channel_mode(channel_mode: str) -> str:
+        normalized = channel_mode.strip().lower().replace("-", "_")
+        if normalized in {"luminance", "luma", "y"}:
+            return "luminance"
+        if normalized in {"rgb", "per_channel", "per_channel_fft", "per_channel_rgb"}:
+            return "rgb"
+        raise ValueError("frequency.channel_mode must be 'luminance' or 'rgb'.")
 
     def _normalize(self, frequency_map: np.ndarray) -> np.ndarray:
         return normalize_frequency_map(
@@ -144,16 +166,24 @@ class FrequencyImageTransform:
 
     def __call__(self, image: Image.Image) -> torch.Tensor:
         resized_image = resize_rgb_image(image, self.image_size)
-        luminance = rgb_to_luminance(resized_image)
         if self.mode == "fft_magnitude":
-            frequency_map = fft_magnitude_map(luminance)
+            if self.channel_mode == "rgb":
+                frequency_map = fft_magnitude_rgb_map(rgb_to_float_array(resized_image))
+            else:
+                frequency_map = fft_magnitude_map(rgb_to_luminance(resized_image))
         elif self.mode == "dct_map":
+            luminance = rgb_to_luminance(resized_image)
             frequency_map = dct_coefficient_map(luminance, block_size=self.block_size)
         else:
             raise ValueError(f"Unsupported frequency mode: {self.mode}")
 
         frequency_map = self._normalize(frequency_map)
-        tensor = torch.from_numpy(frequency_map).unsqueeze(0).repeat(3, 1, 1).float()
+        if frequency_map.ndim == 2:
+            tensor = torch.from_numpy(frequency_map).unsqueeze(0).repeat(3, 1, 1).float()
+        elif frequency_map.ndim == 3 and frequency_map.shape[-1] == 3:
+            tensor = torch.from_numpy(frequency_map).permute(2, 0, 1).float()
+        else:
+            raise ValueError(f"Frequency map must have shape HxW or HxWx3, got {frequency_map.shape}.")
         return (tensor - self.mean) / self.std
 
 
@@ -175,6 +205,7 @@ def create_frequency_transforms(model: Any, config: dict[str, Any]) -> tuple[Any
     )
     output_config["frequency"] = {
         "mode": mode,
+        "channel_mode": train_transform.channel_mode,
         "block_size": int(frequency_cfg.get("block_size", 8)),
         "image_size": int(data_config.get("input_size", (3, 224, 224))[-1]),
         "normalization": {

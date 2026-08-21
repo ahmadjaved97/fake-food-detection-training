@@ -1,0 +1,55 @@
+frequency:
+  mode: fft_magnitude
+  channel_mode: rgb
+  normalization:
+    mode: fixed_minmax
+
+fusion:
+  hidden_dim: 512
+  dropout: 0.2
+
+model:
+  family: rgb_fft_fusion_timm
+  name: convnext_tiny.fb_in22k_ft_in1k
+  pretrained: true
+  num_classes: null
+
+training:
+  epochs: 70
+  per_device_batch_size: 16
+  gradient_accumulation_steps: 4
+  effective_batch_size: 256
+
+data:
+  label_column: data_category
+  allowed_classes:
+    - real_good
+    - real_bad
+    - fake_good
+    - fake_bad
+    - manipulated_bad
+
+optimizer:
+  lr: 0.0001
+  weight_decay: 0.05
+
+scheduler:
+  warmup_epochs: 8
+
+augmentations:
+  horizontal_flip_prob: 0.0
+  vertical_flip_prob: 0.0
+  rotation_degrees: 0
+  color_jitter:
+    enabled: false
+  random_erasing_prob: 0.0
+  auto_augment: null
+  rand_augment: null
+  mixup_alpha: 0.0
+  cutmix_alpha: 0.0
+  label_smoothing: 0.0
+
+logging:
+  wandb:
+    project: fake-food-fusion
+    tags: [rgb_fft, rgb_channel_fft, late_fusion, convnext_tiny]

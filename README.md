@@ -360,7 +360,7 @@ The CLIP path only supports `class_category` labels matching `LABEL_TO_TEXT`: `r
 
 ## Frequency-Domain Training
 
-Frequency-domain training uses a separate timm-only entrypoint and configs. RGB images are converted on the fly into either FFT magnitude maps or block-DCT coefficient maps, then replicated to 3 channels for pretrained backbones.
+Frequency-domain training uses a separate timm-only entrypoint and configs. RGB images are converted on the fly into either FFT magnitude maps or block-DCT coefficient maps, then passed as 3-channel tensors for pretrained backbones.
 
 Available starter configs:
 
@@ -370,6 +370,7 @@ configs/frequency/resnet18_dct.yaml
 configs/frequency/resnet34_fft.yaml
 configs/frequency/resnet34_dct.yaml
 configs/frequency/resnet50_fft.yaml
+configs/frequency/resnet50_fft_rgb_channels.yaml
 configs/frequency/resnet50_dct.yaml
 configs/frequency/mobilenetv3_small_100_fft.yaml
 configs/frequency/mobilenetv3_small_100_dct.yaml
@@ -425,6 +426,24 @@ scripts/train_all_frequency.sh
 
 The first version uses frequency images only. It does not replace ViT/Swin patch embedding with DCT tokens yet. Images are resized before FFT/DCT, frequency maps remain float32, and DCT is computed with vectorized 8x8 blocks.
 
+FFT channel handling is controlled by `frequency.channel_mode`:
+
+```yaml
+frequency:
+  mode: fft_magnitude
+  channel_mode: luminance  # default; one luminance FFT map repeated to 3 channels
+```
+
+For per-channel FFT:
+
+```yaml
+frequency:
+  mode: fft_magnitude
+  channel_mode: rgb  # FFT is computed separately for R, G, and B
+```
+
+`channel_mode: rgb` is supported only for FFT. DCT currently uses luminance only.
+
 Evaluate a frequency-domain checkpoint with the same flags as RGB evaluation:
 
 ```bash
@@ -444,6 +463,7 @@ python3 scripts/compute_frequency_stats.py \
   --csv /path/to/metadata/train.csv \
   --dataset-root /path/to/image_root \
   --mode fft_magnitude \
+  --channel-mode luminance \
   --include-labels real_good real_bad \
   --output-json outputs/frequency_fft_real_stats.json
 ```
@@ -468,8 +488,30 @@ configs/fusion/resnet18_rgb_fft.yaml
 configs/fusion/resnet34_rgb_fft.yaml
 configs/fusion/resnet50_rgb_fft.yaml
 configs/fusion/vit_small_rgb_fft.yaml
+configs/fusion/vit_base_rgb_fft.yaml
+configs/fusion/vit_large_rgb_fft.yaml
 configs/fusion/dinov3_small_rgb_fft.yaml
+configs/fusion/dinov3_small_plus_rgb_fft.yaml
+configs/fusion/dinov3_base_rgb_fft.yaml
 configs/fusion/convnext_tiny_rgb_fft.yaml
+configs/fusion/convnext_small_rgb_fft.yaml
+configs/fusion/convnext_large_rgb_fft.yaml
+configs/fusion/mobilenetv3_large_rgb_fft.yaml
+configs/fusion/mobilenetv3_small_rgb_fft.yaml
+configs/fusion/resnet18_rgb_fft_rgb_channels.yaml
+configs/fusion/resnet34_rgb_fft_rgb_channels.yaml
+configs/fusion/resnet50_rgb_fft_rgb_channels.yaml
+configs/fusion/vit_small_rgb_fft_rgb_channels.yaml
+configs/fusion/vit_base_rgb_fft_rgb_channels.yaml
+configs/fusion/vit_large_rgb_fft_rgb_channels.yaml
+configs/fusion/dinov3_small_rgb_fft_rgb_channels.yaml
+configs/fusion/dinov3_small_plus_rgb_fft_rgb_channels.yaml
+configs/fusion/dinov3_base_rgb_fft_rgb_channels.yaml
+configs/fusion/convnext_tiny_rgb_fft_rgb_channels.yaml
+configs/fusion/convnext_small_rgb_fft_rgb_channels.yaml
+configs/fusion/convnext_large_rgb_fft_rgb_channels.yaml
+configs/fusion/mobilenetv3_large_rgb_fft_rgb_channels.yaml
+configs/fusion/mobilenetv3_small_rgb_fft_rgb_channels.yaml
 ```
 
 Run one fusion model:
@@ -490,6 +532,25 @@ VAL_CSV=/path/to/metadata/val.csv \
 DATASET_ROOT=/path/to/image_root \
 scripts/train_all_fusion.sh
 ```
+
+Run all fusion configs with per-channel RGB FFT in the spectral branch:
+
+```bash
+TRAIN_CSV=/path/to/metadata/train.csv \
+VAL_CSV=/path/to/metadata/val.csv \
+DATASET_ROOT=/path/to/image_root \
+scripts/train_all_fusion_rgb_channels.sh
+```
+
+The default fusion configs use luminance FFT in the spectral branch. The `_rgb_channels` configs set:
+
+```yaml
+frequency:
+  mode: fft_magnitude
+  channel_mode: rgb
+```
+
+That means the fusion model receives normal RGB in one branch and `[FFT_R, FFT_G, FFT_B]` in the spectral branch.
 
 Evaluate a fusion checkpoint with the same flags as RGB evaluation:
 

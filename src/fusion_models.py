@@ -114,6 +114,7 @@ def create_rgb_fft_fusion_transforms(
     output_config["fusion"] = {
         "rgb": "deterministic_resize_normalize",
         "frequency": "fft_magnitude",
+        "frequency_channel_mode": fft_transform.channel_mode,
         "augmentation": "disabled",
     }
     return fusion_transform, fusion_transform, output_config

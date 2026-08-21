@@ -9,8 +9,16 @@ CONFIGS=(
   configs/fusion/resnet34_rgb_fft.yaml
   configs/fusion/resnet50_rgb_fft.yaml
   configs/fusion/vit_small_rgb_fft.yaml
+  configs/fusion/vit_base_rgb_fft.yaml
+  configs/fusion/vit_large_rgb_fft.yaml
   configs/fusion/dinov3_small_rgb_fft.yaml
+  configs/fusion/dinov3_small_plus_rgb_fft.yaml
+  configs/fusion/dinov3_base_rgb_fft.yaml
   configs/fusion/convnext_tiny_rgb_fft.yaml
+  configs/fusion/convnext_small_rgb_fft.yaml
+  configs/fusion/convnext_large_rgb_fft.yaml
+  configs/fusion/mobilenetv3_large_rgb_fft.yaml
+  configs/fusion/mobilenetv3_small_rgb_fft.yaml
 )
 
 for config in "${CONFIGS[@]}"; do
