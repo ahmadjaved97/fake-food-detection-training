@@ -228,6 +228,8 @@ Checkpoints contain model, optimizer, scheduler, epoch, global step, best metric
 
 MetaCLIP 2 CoOp checkpoints are prompt checkpoints: they save the learned context vectors plus optimizer/scheduler/config/class mapping, and reload the frozen Hugging Face MetaCLIP 2 base model by name.
 
+MetaCLIP 2 classification fine-tuning checkpoints are full model checkpoints: they save the fine-tuned vision encoder weights plus the classifier head, optimizer, scheduler, config, and class mapping.
+
 ## Evaluation
 
 Evaluate a checkpoint on a labeled CSV:
@@ -357,6 +359,80 @@ scripts/train_all_metaclip2_coop.sh
 ```
 
 The CLIP path only supports `class_category` labels matching `LABEL_TO_TEXT`: `real_good`, `real_bad`, `fake_good`, `fake_bad`, and `manipulated_bad`. It keeps `class_to_idx` based on raw CSV labels for metrics, but builds prompts from natural-language phrases.
+
+## MetaCLIP 2 Classification Fine-Tuning
+
+MetaCLIP 2 classification fine-tuning is separate from CoOp. It does not train prompts or use the text encoder. Instead, it fully fine-tunes the pretrained MetaCLIP 2 vision encoder end-to-end with a normal classification head.
+
+Available RGB configs:
+
+```text
+configs/metaclip2_ft/rgb/s16.yaml
+configs/metaclip2_ft/rgb/b16.yaml
+configs/metaclip2_ft/rgb/m16.yaml
+```
+
+Available frequency configs:
+
+```text
+configs/metaclip2_ft/frequency/s16_fft.yaml
+configs/metaclip2_ft/frequency/s16_fft_rgb_channels.yaml
+configs/metaclip2_ft/frequency/s16_dct.yaml
+configs/metaclip2_ft/frequency/b16_fft.yaml
+configs/metaclip2_ft/frequency/b16_fft_rgb_channels.yaml
+configs/metaclip2_ft/frequency/b16_dct.yaml
+configs/metaclip2_ft/frequency/m16_fft.yaml
+configs/metaclip2_ft/frequency/m16_fft_rgb_channels.yaml
+configs/metaclip2_ft/frequency/m16_dct.yaml
+```
+
+Available RGB+FFT fusion configs:
+
+```text
+configs/metaclip2_ft/fusion/s16_rgb_fft.yaml
+configs/metaclip2_ft/fusion/s16_rgb_fft_rgb_channels.yaml
+configs/metaclip2_ft/fusion/b16_rgb_fft.yaml
+configs/metaclip2_ft/fusion/b16_rgb_fft_rgb_channels.yaml
+configs/metaclip2_ft/fusion/m16_rgb_fft.yaml
+configs/metaclip2_ft/fusion/m16_rgb_fft_rgb_channels.yaml
+```
+
+Run one full fine-tuning job:
+
+```bash
+CONFIG=configs/metaclip2_ft/rgb/s16.yaml \
+TRAIN_CSV=/path/to/metadata/train.csv \
+VAL_CSV=/path/to/metadata/val.csv \
+DATASET_ROOT=/path/to/image_root \
+scripts/train_metaclip2_ft.sh
+```
+
+Run groups:
+
+```bash
+scripts/train_all_metaclip2_ft_rgb.sh
+scripts/train_all_metaclip2_ft_frequency.sh
+scripts/train_all_metaclip2_ft_fusion.sh
+```
+
+Evaluate a MetaCLIP 2 classification fine-tuning checkpoint:
+
+```bash
+python3 scripts/evaluate_metaclip2_ft.py \
+  --model-path outputs/metaclip2_ft_s16/best_macro_f1.pt \
+  --csv /path/to/metadata/val.csv \
+  --dataset-root /path/to/image_root \
+  --label-column data_category \
+  --predictions-csv outputs/metaclip2_ft_s16/eval_predictions.csv \
+  --output-json outputs/metaclip2_ft_s16/eval_metrics.json
+```
+
+The MetaCLIP 2 input size is not hard-coded in this repo. The training/evaluation code reads the Hugging Face image processor defaults for the selected model. To train on an offline compute node, first download/cache the model on a machine with internet, set `model.cache_dir` to that cache path, and set:
+
+```yaml
+model:
+  local_files_only: true
+```
 
 ## Frequency-Domain Training
 

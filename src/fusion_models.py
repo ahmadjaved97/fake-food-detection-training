@@ -38,10 +38,27 @@ class RGBFFTFusionModel(nn.Module):
 
     @staticmethod
     def _feature_dim(backbone: nn.Module, branch_name: str) -> int:
-        num_features = getattr(backbone, "num_features", None)
-        if num_features is None:
-            raise ValueError(f"Could not infer {branch_name} backbone feature dimension from timm model.")
-        return int(num_features)
+        data_config = resolve_model_data_config(backbone)
+        input_size = tuple(int(value) for value in data_config.get("input_size", (3, 224, 224)))
+        param = next(backbone.parameters(), None)
+        device = param.device if param is not None else torch.device("cpu")
+        dtype = param.dtype if param is not None else torch.float32
+        was_training = backbone.training
+        backbone.eval()
+        try:
+            with torch.no_grad():
+                dummy = torch.zeros((1, *input_size), device=device, dtype=dtype)
+                features = backbone(dummy)
+        finally:
+            backbone.train(was_training)
+        if features.ndim > 2:
+            features = features.flatten(1)
+        if features.ndim != 2:
+            raise ValueError(
+                f"Could not infer {branch_name} backbone feature dimension; "
+                f"expected a 2D feature tensor, got shape {tuple(features.shape)}."
+            )
+        return int(features.shape[1])
 
     def forward(self, inputs: Any) -> torch.Tensor:
         if isinstance(inputs, dict):
