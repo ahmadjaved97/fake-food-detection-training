@@ -6,8 +6,17 @@ model:
   input_size: 224
 
 optimizer:
-  lr: 0.0003
-  weight_decay: 0.0001
+  lr: 5e-5
+  weight_decay: 0.05
 
 training:
-  epochs: 60
+  epochs: 10
+
+scheduler:
+  warmup_epochs: 1
+  min_lr_ratio: 0.01
+
+checkpoint:
+  save_epoch_checkpoints: false   # best_macro_f1.pt and final.pt are still saved
+  monitor: macro_f1
+  mode: max

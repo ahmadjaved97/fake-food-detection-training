@@ -1,9 +1,16 @@
 model:
   name: mobilenetv3_small_100.lamb_in1k
 training:
-  epochs: 70
+  epochs: 10
 optimizer:
-  lr: 0.0005
-  weight_decay: 0.0001
+  lr: 5e-4
+  weight_decay: 0.01
+
 scheduler:
-  warmup_epochs: 5
+  warmup_epochs: 1
+  min_lr_ratio: 0.01
+
+checkpoint:
+  save_epoch_checkpoints: false   # best_macro_f1.pt and final.pt are still saved
+  monitor: macro_f1
+  mode: max

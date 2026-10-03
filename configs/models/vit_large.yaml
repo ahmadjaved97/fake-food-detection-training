@@ -1,9 +1,16 @@
 model:
   name: vit_large_patch16_224.augreg_in21k_ft_in1k
 training:
-  epochs: 100
+  epochs: 10
 optimizer:
-  lr: 0.00008
+  lr: 3e-5
   weight_decay: 0.05
+
 scheduler:
-  warmup_epochs: 10
+  warmup_epochs: 1
+  min_lr_ratio: 0.01
+
+checkpoint:
+  save_epoch_checkpoints: false   # best_macro_f1.pt and final.pt are still saved
+  monitor: macro_f1
+  mode: max
