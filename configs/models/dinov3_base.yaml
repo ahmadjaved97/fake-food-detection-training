@@ -20,3 +20,14 @@ checkpoint:
   save_epoch_checkpoints: false   # best_macro_f1.pt and final.pt are still saved
   monitor: macro_f1
   mode: max
+
+logging:
+  wandb:
+    enabled: true
+    project: fake-food-rgb-ablation     # new project, so old runs don't mix into the new comparison
+    entity: null
+    mode: offline                       # your nodes have no internet; sync with scripts/sync_wandb_loop.sh
+    tags: [rgb, baseline_10ep]          # swap the 2nd tag per experiment, see below
+  wrong_examples:
+    enabled: true
+    max_images: 5
