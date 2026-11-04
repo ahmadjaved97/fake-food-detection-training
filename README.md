@@ -1,15 +1,28 @@
 # Fake Food Detection Training
 
-Production-ready PyTorch image classification training using `timm` models and Hugging Face Accelerate.
-The default target task is fake food classification, but labels are configurable through the CSV label column. A common 5-class setup is:
+Production-ready PyTorch image classification training using `timm` models and Hugging Face Accelerate. The default target task is fake food classification, but labels are configurable through the CSV label column.
 
-```text
-real_good
-real_bad
-fake_good
-fake_bad
-manipulated_bad
-```
+### Class Labels
+
+The dataset originally used the following five classes:
+
+- `real_good`
+- `real_bad`
+- `fake_good`
+- `fake_bad`
+- `manipulated_bad`
+
+**Note:** In the updated JSONL dataset, the original class labels have been renamed for improved clarity and consistency. The mapping is as follows:
+
+| Original Label | Updated JSONL Label |
+|----------------|---------------------|
+| `real_good` | `authentic` |
+| `real_bad` | `authentic_defective` |
+| `fake_good` | `generated` |
+| `fake_bad` | `generated_defective` |
+| `manipulated_bad` | `manipulated_defective` |
+
+**Important:** Users working with the updated JSONL dataset should use the new class labels. When using older datasets or CSV files, ensure that the labels are mapped consistently to avoid mismatches during training and evaluation.
 
 These labels are examples, not hard-coded. The code infers `class_to_idx` from the selected and filtered training CSV label column, validates the validation CSV against that mapping, and saves `class_to_idx.json` in the output directory. If `data.allowed_classes` is set, that list controls both the target label subset and class order.
 
