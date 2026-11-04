@@ -1,5 +1,6 @@
 model:
   name: vit_small_patch14_dinov2.lvd142m
+  freeze_backbone: true
 training:
   epochs: 60
 optimizer:

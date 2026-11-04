@@ -1,0 +1,13 @@
+data:
+  label_column: class_category
+  # Train/evaluate only these target labels. Class indices follow this order.
+  allowed_classes:
+    - real_good
+    - fake_good
+    - fake_bad
+
+model:
+  name: resnet50
+  pretrained: true
+  num_classes: null
+

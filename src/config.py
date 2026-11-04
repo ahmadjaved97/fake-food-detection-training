@@ -67,6 +67,21 @@ def apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> dic
         cfg["run_name"] = args.run_name
     if args.mixed_precision:
         cfg["training"]["mixed_precision"] = args.mixed_precision
+    if args.label_column:
+        cfg["data"]["label_column"] = args.label_column
+    if args.allowed_classes:
+        cfg["data"]["allowed_classes"] = args.allowed_classes
+    label_filters = cfg["data"].setdefault("label_filters", {})
+    train_label_filters = label_filters.setdefault("train", {})
+    val_label_filters = label_filters.setdefault("validation", {})
+    if args.train_include_labels:
+        train_label_filters["include"] = args.train_include_labels
+    if args.train_exclude_labels:
+        train_label_filters["exclude"] = args.train_exclude_labels
+    if args.val_include_labels:
+        val_label_filters["include"] = args.val_include_labels
+    if args.val_exclude_labels:
+        val_label_filters["exclude"] = args.val_exclude_labels
     return cfg
 
 
@@ -94,6 +109,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--per-device-batch-size", type=int, default=None)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=None)
     parser.add_argument("--mixed-precision", choices=["no", "fp16", "bf16", "fp8"], default=None)
+    parser.add_argument(
+        "--label-column",
+        default=None,
+        help="CSV label column to train on, e.g. class_category or generator_model.",
+    )
+    parser.add_argument("--allowed-classes", nargs="+", default=None, help="Allowed output labels/classes.")
+    parser.add_argument("--train-include-labels", nargs="+", default=None, help="Keep only these train labels.")
+    parser.add_argument("--train-exclude-labels", nargs="+", default=None, help="Drop these train labels.")
+    parser.add_argument("--val-include-labels", nargs="+", default=None, help="Keep only these validation labels.")
+    parser.add_argument("--val-exclude-labels", nargs="+", default=None, help="Drop these validation labels.")
     parser.add_argument("--enable-wandb", action="store_true")
     parser.add_argument("--enable-tensorboard", action="store_true")
     parser.add_argument("--run-name", default=None)

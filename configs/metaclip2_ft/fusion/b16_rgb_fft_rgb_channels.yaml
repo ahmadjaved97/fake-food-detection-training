@@ -1,0 +1,71 @@
+data:
+  label_column: data_category
+  allowed_classes: [real_good, real_bad, fake_good, fake_bad, manipulated_bad]
+
+model:
+  family: metaclip2_ft
+  name: facebook/metaclip-2-worldwide-b16
+  pretrained: true
+  cache_dir: null
+  local_files_only: false
+  num_classes: null
+
+metaclip2_ft:
+  input_domain: fusion
+
+frequency:
+  mode: fft_magnitude
+  channel_mode: rgb
+  normalization:
+    mode: fixed_minmax
+
+fusion:
+  hidden_dim: 1024
+  dropout: 0.2
+
+training:
+  epochs: 30
+  per_device_batch_size: 8
+  gradient_accumulation_steps: 8
+  effective_batch_size: 256
+  mixed_precision: bf16
+  max_grad_norm: 1.0
+  compile: false
+
+optimizer:
+  lr: 0.000005
+  weight_decay: 0.05
+
+scheduler:
+  warmup_epochs: 3
+  min_lr_ratio: 0.01
+
+augmentations:
+  horizontal_flip_prob: 0.0
+  vertical_flip_prob: 0.0
+  rotation_degrees: 0
+  color_jitter:
+    enabled: false
+  random_erasing_prob: 0.0
+  auto_augment: null
+  rand_augment: null
+  mixup_alpha: 0.0
+  cutmix_alpha: 0.0
+  label_smoothing: 0.0
+
+checkpoint:
+  monitor: macro_f1
+  mode: max
+
+logging:
+  wandb:
+    enabled: true
+    project: fake-food-metaclip2-ft
+    entity: null
+    mode: online
+    tags: [metaclip2_ft, fusion, rgb_fft_rgb_channels, b16]
+  tensorboard:
+    enabled: false
+  wrong_examples:
+    enabled: true
+    max_images: 5

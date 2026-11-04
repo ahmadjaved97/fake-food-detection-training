@@ -1,0 +1,55 @@
+frequency:
+  mode: dct_map
+  block_size: 8
+  normalization:
+    mode: fixed_minmax
+
+model:
+  family: frequency_timm
+  name: resnet18.tv_in1k
+  pretrained: true
+  num_classes: null
+
+training:
+  epochs: 60
+  per_device_batch_size: 32
+  gradient_accumulation_steps: 2
+  effective_batch_size: 256
+
+data:
+  label_column: data_category
+
+optimizer:
+  lr: 0.0003
+  weight_decay: 0.0001
+
+scheduler:
+  warmup_epochs: 5
+
+augmentations:
+  horizontal_flip_prob: 0.0
+  vertical_flip_prob: 0.0
+  rotation_degrees: 0
+  color_jitter:
+    enabled: false
+  random_erasing_prob: 0.0
+  auto_augment: null
+  rand_augment: null
+  mixup_alpha: 0.0
+  cutmix_alpha: 0.0
+  label_smoothing: 0.0
+
+logging:
+  log_every_steps: 50
+  wandb:
+    enabled: true
+    project: fake-food-freq
+    entity: null
+    # Set to "offline" on compute nodes without internet, then sync from a login node.
+    mode: online
+    tags: []
+  tensorboard:
+    enabled: false
+  wrong_examples:
+    enabled: true
+    max_images: 5

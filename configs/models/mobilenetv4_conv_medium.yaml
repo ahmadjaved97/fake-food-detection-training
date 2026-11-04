@@ -1,0 +1,9 @@
+model:
+  name: mobilenetv4_conv_medium.e500_r256_in1k
+training:
+  epochs: 70
+optimizer:
+  lr: 0.0004
+  weight_decay: 0.0001
+scheduler:
+  warmup_epochs: 5

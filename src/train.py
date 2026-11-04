@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import numpy as np
 import torch
 from accelerate import Accelerator
+from accelerate.utils import gather_object
 from timm.data import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from torch import nn
@@ -23,6 +24,7 @@ from src.checkpointing import load_checkpoint, save_checkpoint
 from src.config import apply_cli_overrides, build_arg_parser, load_config
 from src.data import (
     ImageCsvDataset,
+    apply_configured_row_filters,
     class_counts,
     infer_class_to_idx,
     make_class_weights,
@@ -33,6 +35,7 @@ from src.logging_utils import RunLoggers
 from src.metrics import compute_classification_metrics
 from src.models import create_model, create_transforms
 from src.optim import create_optimizer
+from src.rich_utils import print_panel, print_table
 from src.scheduler import create_cosine_scheduler
 from src.utils import (
     append_jsonl,
@@ -55,8 +58,12 @@ class FocalLoss(nn.Module):
         self.register_buffer("weight", weight if weight is not None else None)
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        ce = nn.functional.cross_entropy(logits, targets, weight=self.weight, reduction="none")
-        pt = torch.exp(-ce)
+        log_probs = nn.functional.log_softmax(logits, dim=1)
+        log_pt = log_probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+        pt = log_pt.exp()
+        ce = -log_pt
+        if self.weight is not None:
+            ce = ce * self.weight.to(logits.device).gather(0, targets)
         loss = (1.0 - pt).pow(self.gamma) * ce
         return loss.mean()
 
@@ -64,6 +71,12 @@ class FocalLoss(nn.Module):
 def unpack_batch(batch: Any) -> tuple[torch.Tensor, torch.Tensor]:
     images, labels = batch[0], batch[1]
     return images, labels
+
+
+def batch_paths(batch: Any) -> list[str] | None:
+    if len(batch) < 3:
+        return None
+    return [str(path) for path in batch[2]]
 
 
 def build_criteria(
@@ -119,17 +132,37 @@ def evaluate(
     accelerator: Accelerator,
     class_names: list[str],
     enable_auc: bool,
+    max_wrong_examples: int = 0,
 ) -> dict[str, Any]:
     model.eval()
     loss_values: list[torch.Tensor] = []
     all_probs: list[torch.Tensor] = []
     all_labels: list[torch.Tensor] = []
+    local_wrong_examples: list[dict[str, Any]] = []
 
     for batch in dataloader:
         images, labels = unpack_batch(batch)
+        paths = batch_paths(batch)
         logits = model(images)
         loss = criterion(logits, labels)
         probs = torch.softmax(logits.float(), dim=1)
+        preds = probs.argmax(dim=1)
+
+        if paths is not None and max_wrong_examples > 0 and len(local_wrong_examples) < max_wrong_examples:
+            wrong_indices = (preds != labels).nonzero(as_tuple=False).flatten().tolist()
+            for idx in wrong_indices:
+                pred_idx = int(preds[idx].item())
+                true_idx = int(labels[idx].item())
+                local_wrong_examples.append(
+                    {
+                        "image_path": paths[idx],
+                        "true_label": class_names[true_idx],
+                        "predicted_label": class_names[pred_idx],
+                        "confidence": float(probs[idx, pred_idx].item()),
+                    }
+                )
+                if len(local_wrong_examples) >= max_wrong_examples:
+                    break
 
         gathered_probs, gathered_labels = accelerator.gather_for_metrics((probs, labels))
         gathered_loss = accelerator.gather_for_metrics(loss.detach().float().repeat(labels.shape[0]))
@@ -146,6 +179,15 @@ def evaluate(
         enable_auc=enable_auc,
     )
     metrics["loss"] = float(torch.cat(loss_values).mean().item())
+    if max_wrong_examples > 0:
+        gathered_wrong_examples = gather_object(local_wrong_examples)
+        wrong_examples: list[dict[str, Any]] = []
+        for item in gathered_wrong_examples:
+            if isinstance(item, list):
+                wrong_examples.extend(item)
+            else:
+                wrong_examples.append(item)
+        metrics["wrong_examples"] = wrong_examples[:max_wrong_examples]
     return metrics
 
 
@@ -167,18 +209,34 @@ def main() -> None:
 
     label_column = config["data"].get("label_column")
     missing_files_policy = config["data"].get("missing_files_policy", "skip")
+    wrong_examples_cfg = config["logging"].get("wrong_examples", {})
+    max_wrong_examples = (
+        int(wrong_examples_cfg.get("max_images", 16))
+        if bool(wrong_examples_cfg.get("enabled", True))
+        else 0
+    )
     train_rows = read_classification_csv(args.train_csv, label_column=label_column)
+    val_rows = read_classification_csv(args.val_csv, label_column=label_column)
+    train_rows, train_filter_report = apply_configured_row_filters(train_rows, config["data"], "train")
+    val_rows, val_filter_report = apply_configured_row_filters(val_rows, config["data"], "validation")
     class_to_idx = infer_class_to_idx(train_rows, config["data"].get("allowed_classes"))
     num_classes = len(class_to_idx)
-    expected_num_classes = int(config["model"].get("num_classes", num_classes))
-    if num_classes != expected_num_classes:
+    expected_num_classes = config["model"].get("num_classes")
+    if expected_num_classes is not None and num_classes != int(expected_num_classes):
         raise ValueError(
             f"Training CSV produced {num_classes} classes but config expects {expected_num_classes}. "
-            "Make sure all five target classes appear in the training CSV."
+            "Set model.num_classes to null to infer this from the selected label column."
         )
     class_names = [name for name, _ in sorted(class_to_idx.items(), key=lambda item: item[1])]
 
     if accelerator.is_main_process:
+        print_panel(
+            f"Model: {config['model']['name']}\n"
+            f"Label column: {label_column or 'auto-detect class_category/category'}\n"
+            f"Classes: {num_classes}\n"
+            f"Class labels: {', '.join(class_names)}",
+            title="Training Setup",
+        )
         write_json(class_to_idx, output_dir / "class_to_idx.json")
         write_yaml(config, output_dir / "resolved_config.yaml")
         write_json(get_env_info(), output_dir / "env_info.json")
@@ -201,6 +259,8 @@ def main() -> None:
         missing_files_log_path=output_dir / "missing_files_train.csv"
         if accelerator.is_main_process
         else None,
+        rows=train_rows,
+        row_filter_report=train_filter_report,
     )
     val_dataset = ImageCsvDataset(
         args.val_csv,
@@ -208,41 +268,85 @@ def main() -> None:
         class_to_idx,
         transform=val_transform,
         validate_files=bool(config["data"].get("validate_files", True)),
-        return_paths=bool(config["data"].get("return_paths", False)),
+        return_paths=bool(config["data"].get("return_paths", False)) or max_wrong_examples > 0,
         split_name="validation",
         label_column=label_column,
         missing_files_policy=missing_files_policy,
         missing_files_log_path=output_dir / "missing_files_validation.csv"
         if accelerator.is_main_process
         else None,
+        rows=val_rows,
+        row_filter_report=val_filter_report,
     )
 
     counts = class_counts(train_dataset.targets, num_classes)
     if accelerator.is_main_process:
         write_json({class_names[i]: int(counts[i]) for i in range(num_classes)}, output_dir / "class_counts.json")
+        print_table(
+            "Dataset Summary",
+            [
+                "split",
+                "raw rows",
+                "label-filtered",
+                "metadata-filtered",
+                "selected rows",
+                "usable images",
+                "missing images",
+            ],
+            [
+                [
+                    "train",
+                    train_dataset.total_rows,
+                    train_dataset.filtered_label_rows,
+                    train_dataset.filtered_metadata_rows,
+                    train_dataset.selected_rows,
+                    len(train_dataset),
+                    len(train_dataset.missing_rows),
+                ],
+                [
+                    "validation",
+                    val_dataset.total_rows,
+                    val_dataset.filtered_label_rows,
+                    val_dataset.filtered_metadata_rows,
+                    val_dataset.selected_rows,
+                    len(val_dataset),
+                    len(val_dataset.missing_rows),
+                ],
+            ],
+        )
         if train_dataset.missing_rows:
             LOGGER.warning(
                 "Skipped %d missing train images. See %s",
                 len(train_dataset.missing_rows),
                 output_dir / "missing_files_train.csv",
             )
+        else:
+            LOGGER.info("Skipped 0 missing train images.")
         if val_dataset.missing_rows:
             LOGGER.warning(
                 "Skipped %d missing validation images. See %s",
                 len(val_dataset.missing_rows),
                 output_dir / "missing_files_validation.csv",
             )
+        else:
+            LOGGER.info("Skipped 0 missing validation images.")
         zero_count_classes = [class_names[i] for i, count in enumerate(counts.tolist()) if count == 0]
         if zero_count_classes:
             LOGGER.warning("Classes with zero usable training images after filtering: %s", zero_count_classes)
 
     sampler = None
     if config["imbalance"]["weighted_sampler"]["enabled"]:
-        LOGGER.warning("Weighted sampler is enabled. For distributed training, validate convergence carefully.")
+        sampler_seed = int(config["imbalance"]["weighted_sampler"].get("seed") or config["seed"])
+        LOGGER.info(
+            "Weighted sampler is enabled with shared sampler seed %d. "
+            "All ranks build the same weighted stream and Accelerate shards it.",
+            sampler_seed,
+        )
         sampler = make_weighted_sampler(
             train_dataset.targets,
             counts,
             replacement=bool(config["imbalance"]["weighted_sampler"].get("replacement", True)),
+            seed=sampler_seed,
         )
 
     batch_size = int(config["training"]["per_device_batch_size"])
@@ -328,9 +432,15 @@ def main() -> None:
     max_grad_norm = float(config["training"].get("max_grad_norm") or 0.0)
 
     for epoch in range(start_epoch, epochs):
+        if sampler is not None and hasattr(sampler, "set_epoch"):
+            sampler.set_epoch(epoch)
+        if hasattr(train_loader, "set_epoch"):
+            train_loader.set_epoch(epoch)
         model.train()
         epoch_start = time.time()
         train_loss_values: list[torch.Tensor] = []
+        train_correct = 0
+        train_total = 0
 
         for batch in train_loader:
             images, labels = unpack_batch(batch)
@@ -342,6 +452,11 @@ def main() -> None:
                 else:
                     logits = model(images)
                     loss = train_criterion(logits, labels)
+
+                train_preds = logits.detach().argmax(dim=1)
+                gathered_train_correct = accelerator.gather_for_metrics((train_preds == labels).long())
+                train_correct += int(gathered_train_correct.sum().item())
+                train_total += int(gathered_train_correct.numel())
 
                 accelerator.backward(loss)
                 if accelerator.sync_gradients and max_grad_norm > 0:
@@ -364,10 +479,12 @@ def main() -> None:
             accelerator,
             class_names,
             enable_auc=bool(config["metrics"].get("enable_auc", False)),
+            max_wrong_examples=max_wrong_examples,
         )
 
         train_metrics = {
             "loss": train_loss,
+            "accuracy": float(train_correct / max(1, train_total)),
             "lr": float(scheduler.get_last_lr()[0]),
             "epoch_time_seconds": epoch_time,
             "throughput_images_per_second": float(len(train_dataset) / max(epoch_time, 1e-9)),
@@ -376,12 +493,15 @@ def main() -> None:
         if accelerator.is_main_process:
             run_loggers.log(train_metrics, step=epoch + 1, prefix="train")
             run_loggers.log(val_metrics, step=epoch + 1, prefix="validation")
+            run_loggers.log_epoch_comparisons(train_metrics, val_metrics, step=epoch + 1)
             if "confusion_matrix" in val_metrics:
                 run_loggers.log_confusion_matrix(val_metrics["confusion_matrix"], class_names, step=epoch + 1)
+            run_loggers.log_wrong_examples(val_metrics.get("wrong_examples", []), step=epoch + 1)
             LOGGER.info(
-                "epoch=%03d train_loss=%.4f val_loss=%.4f val_acc=%.4f val_macro_f1=%.4f lr=%.6g",
+                "epoch=%03d train_loss=%.4f train_acc=%.4f val_loss=%.4f val_acc=%.4f val_macro_f1=%.4f lr=%.6g",
                 epoch + 1,
                 train_metrics["loss"],
+                train_metrics["accuracy"],
                 val_metrics["loss"],
                 val_metrics["accuracy"],
                 val_metrics["macro_f1"],
@@ -397,7 +517,9 @@ def main() -> None:
                 output_dir / "metrics.jsonl",
             )
 
-        current_metric = float(val_metrics.get(monitor, val_metrics["accuracy"]))
+        if monitor not in val_metrics or val_metrics[monitor] is None:
+            raise KeyError(f"checkpoint.monitor={monitor!r} is not available in validation metrics.")
+        current_metric = float(val_metrics[monitor])
         is_better = current_metric > best_metric if monitor_mode == "max" else current_metric < best_metric
         if accelerator.is_main_process and is_better:
             best_metric = current_metric
@@ -446,7 +568,12 @@ def main() -> None:
     if accelerator.is_main_process:
         run_loggers.close()
     accelerator.wait_for_everyone()
+    accelerator.end_training()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()

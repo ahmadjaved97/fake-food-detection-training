@@ -1,0 +1,37 @@
+frequency:
+  mode: fft_magnitude
+  normalization:
+    mode: fixed_minmax
+
+model:
+  family: frequency_timm
+  name: swin_tiny_patch4_window7_224.ms_in1k
+  pretrained: true
+  num_classes: null
+
+training:
+  epochs: 100
+  per_device_batch_size: 32
+  gradient_accumulation_steps: 2
+  effective_batch_size: 256
+
+optimizer:
+  lr: 0.0001
+  weight_decay: 0.05
+
+scheduler:
+  warmup_epochs: 10
+
+augmentations:
+  horizontal_flip_prob: 0.0
+  vertical_flip_prob: 0.0
+  rotation_degrees: 0
+  color_jitter:
+    enabled: false
+  random_erasing_prob: 0.0
+  auto_augment: null
+  rand_augment: null
+  mixup_alpha: 0.0
+  cutmix_alpha: 0.0
+  label_smoothing: 0.0
+

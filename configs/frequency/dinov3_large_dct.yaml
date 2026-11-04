@@ -1,0 +1,56 @@
+frequency:
+  mode: dct_map
+  block_size: 8
+  normalization:
+    mode: fixed_minmax
+
+model:
+  family: frequency_timm
+  name: vit_large_patch16_dinov3.lvd1689m
+  pretrained: true
+  freeze_backbone: false
+  num_classes: null
+
+training:
+  epochs: 60
+  per_device_batch_size: 16
+  gradient_accumulation_steps: 4
+  effective_batch_size: 256
+
+data:
+  label_column: data_category
+
+optimizer:
+  lr: 0.0003
+  weight_decay: 0.0001
+
+scheduler:
+  warmup_epochs: 2
+
+augmentations:
+  horizontal_flip_prob: 0.0
+  vertical_flip_prob: 0.0
+  rotation_degrees: 0
+  color_jitter:
+    enabled: false
+  random_erasing_prob: 0.0
+  auto_augment: null
+  rand_augment: null
+  mixup_alpha: 0.0
+  cutmix_alpha: 0.0
+  label_smoothing: 0.0
+
+logging:
+  log_every_steps: 50
+  wandb:
+    enabled: true
+    project: fake-food-freq
+    entity: null
+    mode: online
+    tags: []
+  tensorboard:
+    enabled: false
+  wrong_examples:
+    enabled: true
+    max_images: 5
+

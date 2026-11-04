@@ -1,9 +1,27 @@
 model:
   name: vit_small_patch16_224.augreg_in21k_ft_in1k
 training:
-  epochs: 90
+  epochs: 10
 optimizer:
-  lr: 0.0001
+  lr: 1e-4
   weight_decay: 0.05
+
 scheduler:
-  warmup_epochs: 10
+  warmup_epochs: 1
+  min_lr_ratio: 0.01
+
+checkpoint:
+  save_epoch_checkpoints: false   # best_macro_f1.pt and final.pt are still saved
+  monitor: macro_f1
+  mode: max
+
+logging:
+  wandb:
+    enabled: true
+    project: fake-food-rgb-ablation     # new project, so old runs don't mix into the new comparison
+    entity: null
+    mode: offline                       # your nodes have no internet; sync with scripts/sync_wandb_loop.sh
+    tags: [rgb, baseline_10ep]          # swap the 2nd tag per experiment, see below
+  wrong_examples:
+    enabled: true
+    max_images: 5
